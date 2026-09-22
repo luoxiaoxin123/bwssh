@@ -4,3 +4,4 @@ artifacts/
 dist/
 *.user
 .vs/
+TestResults/
