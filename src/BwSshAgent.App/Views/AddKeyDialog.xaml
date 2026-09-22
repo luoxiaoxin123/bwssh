@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog
+    x:Class="BwSshAgent.App.Views.AddKeyDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:BwSshAgent.App"
+    Title="{l:T Zh='添加 SSH 密钥', En='Add SSH key'}"
+    PrimaryButtonText="{l:T Zh='保存到密码库', En='Save to vault'}"
+    CloseButtonText="{l:T Zh='取消', En='Cancel'}"
+    DefaultButton="Primary"
+    PrimaryButtonClick="OnSave">
+    <StackPanel Spacing="12" MinWidth="460">
+        <SelectorBar x:Name="ModeBar" SelectionChanged="OnModeChanged">
+            <SelectorBarItem Text="{l:T Zh='生成新密钥', En='Generate new key'}" IsSelected="True" />
+            <SelectorBarItem Text="{l:T Zh='导入已有私钥', En='Import existing key'}" />
+        </SelectorBar>
+
+        <TextBox x:Name="NameBox" Header="{l:T Zh='名称', En='Name'}" PlaceholderText="{l:T Zh='例如：GitHub、公司跳板机', En='e.g. GitHub, work bastion'}" />
+
+        <StackPanel x:Name="GeneratePanel" Spacing="8">
+            <ComboBox x:Name="TypeBox" Header="{l:T Zh='密钥类型', En='Key type'}" HorizontalAlignment="Stretch" SelectedIndex="0">
+                <ComboBoxItem Content="{l:T Zh='Ed25519（推荐）', En='Ed25519 (recommended)'}" />
+                <ComboBoxItem Content="{l:T Zh='RSA 3072 位', En='RSA 3072-bit'}" />
+                <ComboBoxItem Content="{l:T Zh='RSA 4096 位', En='RSA 4096-bit'}" />
+            </ComboBox>
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="{l:T Zh='保存后公钥会自动复制到剪贴板，把它加到服务器的 ~/.ssh/authorized_keys 或 GitHub 等平台即可。', En='The public key is copied to the clipboard after saving. Add it to ~/.ssh/authorized_keys on your server or to GitHub.'}" />
+        </StackPanel>
+
+        <StackPanel x:Name="ImportPanel" Spacing="8" Visibility="Collapsed">
+            <Grid>
+                <TextBlock Text="{l:T Zh='私钥', En='Private key'}" VerticalAlignment="Center" />
+                <Button Content="{l:T Zh='从文件读取…', En='Read from file…'}" HorizontalAlignment="Right" Click="OnPickFile" />
+            </Grid>
+            <TextBox x:Name="KeyBox" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
+                     Height="150" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     PlaceholderText="{l:T Zh='粘贴私钥内容：-----BEGIN OPENSSH PRIVATE KEY----- …', En='Paste the private key: -----BEGIN OPENSSH PRIVATE KEY----- …'}" />
+            <PasswordBox x:Name="PassphraseBox" Header="{l:T Zh='私钥密码（没有则留空）', En='Key passphrase (leave empty if none)'}" />
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="{l:T Zh='支持 OpenSSH、PKCS#8、传统 PEM 格式，支持带密码的私钥。和 Bitwarden 官方客户端一样，导入后以不带密码的 OpenSSH 格式加密保存在密码库中。', En='OpenSSH, PKCS#8 and traditional PEM keys are supported, including passphrase-protected ones. Like the Bitwarden apps, the key is stored in your vault in OpenSSH format without a passphrase.'}" />
+        </StackPanel>
+
+        <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="IndianRed" Visibility="Collapsed" />
+        <ProgressRing x:Name="Busy" IsActive="False" HorizontalAlignment="Left" Width="24" Height="24" />
+    </StackPanel>
+</ContentDialog>

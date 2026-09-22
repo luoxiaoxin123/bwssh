@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BwSshAgent.App.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:BwSshAgent.App">
+    <ScrollViewer>
+        <StackPanel Margin="32,24,32,32" Spacing="16" MaxWidth="820" HorizontalAlignment="Stretch">
+            <TextBlock Text="{l:T Zh='设置', En='Settings'}" Style="{StaticResource TitleTextBlockStyle}" />
+            <InfoBar x:Name="MessageBar" IsOpen="False" IsClosable="True" />
+
+            <TextBlock Text="{l:T Zh='签名批准', En='Signing approval'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="14">
+                    <RadioButtons x:Name="PromptModeBox" Header="{l:T Zh='程序使用 SSH 密钥时', En='When a program uses an SSH key'}" SelectionChanged="OnPromptModeChanged">
+                        <RadioButton Content="{l:T Zh='每次都询问', En='Always ask'}" />
+                        <RadioButton Content="{l:T Zh='锁定密码库前记住（同一密钥、同一主机只问一次）', En='Remember until lock (ask once per key and host)'}" />
+                        <RadioButton Content="{l:T Zh='从不询问（解锁状态下直接放行）', En='Never ask (allow while unlocked)'}" />
+                    </RadioButtons>
+                    <RadioButtons x:Name="ApprovalUiBox" Header="{l:T Zh='询问方式', En='How to ask'}" MaxColumns="2" SelectionChanged="OnApprovalUiChanged">
+                        <RadioButton Content="{l:T Zh='Windows 通知（右下角）', En='Windows notification'}" />
+                        <RadioButton Content="{l:T Zh='置顶小窗口', En='Topmost window'}" />
+                    </RadioButtons>
+                    <TextBlock x:Name="ToastStatusText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <NumberBox x:Name="GrantBox" Header="{l:T Zh='“允许该程序”时长（分钟）', En='Allow-program duration (minutes)'}" Minimum="1" Maximum="1440"
+                                   SpinButtonPlacementMode="Compact" MinWidth="200" ValueChanged="OnNumberChanged" />
+                        <NumberBox x:Name="TimeoutBox" Header="{l:T Zh='无响应自动拒绝（秒）', En='Auto-deny after (seconds)'}" Minimum="15" Maximum="300"
+                                   SpinButtonPlacementMode="Compact" MinWidth="200" ValueChanged="OnNumberChanged" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{l:T Zh='自动锁定与同步', En='Auto-lock and sync'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <NumberBox x:Name="IdleBox" Header="{l:T Zh='空闲多少分钟后锁定（0 = 不锁定）', En='Lock after idle minutes (0 = never)'}" Minimum="0" Maximum="1440"
+                                   SpinButtonPlacementMode="Compact" MinWidth="240" ValueChanged="OnNumberChanged" />
+                        <NumberBox x:Name="SyncBox" Header="{l:T Zh='自动同步间隔（分钟，0 = 关闭）', En='Auto-sync interval (minutes, 0 = off)'}" Minimum="0" Maximum="1440"
+                                   SpinButtonPlacementMode="Compact" MinWidth="240" ValueChanged="OnNumberChanged" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="LockOnSystemLockSwitch" Header="{l:T Zh='Windows 锁屏时锁定', En='Lock when Windows locks'}" Toggled="OnToggled" />
+                    <ToggleSwitch x:Name="LockOnSleepSwitch" Header="{l:T Zh='睡眠 / 休眠时锁定', En='Lock on sleep or hibernate'}" Toggled="OnToggled" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{l:T Zh='快速解锁', En='Quick unlock'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="14">
+                    <TextBlock x:Name="UnlockHint" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <ToggleSwitch x:Name="HelloSwitch" Header="{l:T Zh='使用 Windows Hello 解锁', En='Unlock with Windows Hello'}" Toggled="OnHelloToggled" />
+                    <ToggleSwitch x:Name="PinSwitch" Header="{l:T Zh='使用 PIN 解锁', En='Unlock with PIN'}" Toggled="OnPinToggled" />
+                    <TextBlock x:Name="PinModeText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{l:T Zh='启动', En='Startup'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <ToggleSwitch x:Name="AutoStartSwitch" Header="{l:T Zh='开机时自动启动（在托盘中后台运行）', En='Start when I sign in (runs in the tray)'}" Toggled="OnAutoStartToggled" />
+            </Border>
+
+            <TextBlock Text="{l:T Zh='高级', En='Advanced'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="10">
+                    <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="{l:T Zh='Windows 版 OpenSSH 默认连接 \\\\.\\pipe\\openssh-ssh-agent。改成其他名称后，需要设置环境变量 SSH_AUTH_SOCK=\\\\.\\pipe\\新名称。', En='Windows OpenSSH connects to \\\\.\\pipe\\openssh-ssh-agent by default. If you change the name, set SSH_AUTH_SOCK=\\\\.\\pipe\\new-name.'}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBox x:Name="PipeNameBox" Header="{l:T Zh='命名管道名称', En='Named pipe name'}" MinWidth="280" />
+                        <Button Content="{l:T Zh='应用', En='Apply'}" VerticalAlignment="Bottom" Click="OnApplyPipe" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{l:T Zh='账户', En='Account'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="10">
+                    <TextBlock x:Name="AccountText" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="{l:T Zh='退出登录', En='Sign out'}" Click="OnLogout" />
+                        <Button Content="{l:T Zh='退出程序', En='Exit bwssh'}" Click="OnExit" />
+                    </StackPanel>
+                    <TextBlock x:Name="VersionText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

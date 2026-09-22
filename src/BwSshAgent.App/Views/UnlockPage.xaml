@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BwSshAgent.App.Views.UnlockPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:BwSshAgent.App">
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" Spacing="14">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <FontIcon Glyph="&#xE72E;" FontSize="32" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{l:T Zh='密码库已锁定', En='Vault is locked'}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock x:Name="AccountText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </StackPanel>
+
+            <InfoBar x:Name="PendingBar" Severity="Warning" IsOpen="False" IsClosable="False" Title="{l:T Zh='有签名请求在等待', En='Signing requests are waiting'}" />
+            <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" />
+
+            <Button x:Name="HelloButton" HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" Click="OnHello" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xEB68;" FontSize="16" />
+                    <TextBlock Text="{l:T Zh='使用 Windows Hello 解锁', En='Unlock with Windows Hello'}" />
+                </StackPanel>
+            </Button>
+
+            <StackPanel x:Name="PinPanel" Spacing="8" Visibility="Collapsed">
+                <PasswordBox x:Name="PinBox" Header="PIN" KeyDown="OnPinKeyDown" InputScope="NumericPin" />
+                <Button Content="{l:T Zh='用 PIN 解锁', En='Unlock with PIN'}" Click="OnPin" MinWidth="120" />
+            </StackPanel>
+
+            <StackPanel x:Name="PasswordPanel" Spacing="8">
+                <PasswordBox x:Name="PasswordBox" Header="{l:T Zh='主密码', En='Master password'}" KeyDown="OnPasswordKeyDown" />
+                <Button x:Name="PasswordButton" Content="{l:T Zh='用主密码解锁', En='Unlock with master password'}" Click="OnPassword" MinWidth="120" />
+            </StackPanel>
+            <HyperlinkButton x:Name="TogglePasswordLink" Content="{l:T Zh='改用主密码', En='Use master password instead'}" Click="OnTogglePassword" Visibility="Collapsed" />
+
+            <ProgressRing x:Name="Busy" IsActive="False" HorizontalAlignment="Left" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
+                <HyperlinkButton Content="{l:T Zh='重新登录', En='Sign in again'}" Click="OnRelogin" />
+                <HyperlinkButton Content="{l:T Zh='退出登录', En='Sign out'}" Click="OnLogout" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

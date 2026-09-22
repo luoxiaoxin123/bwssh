@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BwSshAgent.App.Views.LoginPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:BwSshAgent.App">
+    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" Spacing="14">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Image Source="ms-appx:///Assets/app.png" Width="40" Height="40" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{l:T Zh='登录 Bitwarden', En='Sign in to Bitwarden'}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="{l:T Zh='只同步 SSH 密钥，供 SSH agent 使用', En='Syncs only your SSH keys for the SSH agent'}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </StackPanel>
+
+            <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" />
+            <InfoBar x:Name="NoticeBar" Severity="Informational" IsOpen="False" IsClosable="True" />
+
+            <StackPanel x:Name="CredentialsPanel" Spacing="14">
+                <ComboBox x:Name="ServerBox" Header="{l:T Zh='服务器', En='Server'}" HorizontalAlignment="Stretch" SelectionChanged="OnServerChanged">
+                    <ComboBoxItem Content="{l:T Zh='bitwarden.com（美国）', En='bitwarden.com (US)'}" />
+                    <ComboBoxItem Content="{l:T Zh='bitwarden.eu（欧盟）', En='bitwarden.eu (EU)'}" />
+                    <ComboBoxItem Content="{l:T Zh='自托管服务器', En='Self-hosted server'}" />
+                </ComboBox>
+                <StackPanel x:Name="SelfHostedPanel" Spacing="8" Visibility="Collapsed">
+                    <TextBox x:Name="ServerUrlBox" Header="{l:T Zh='服务器地址', En='Server URL'}" PlaceholderText="https://vault.example.com" />
+                    <Expander Header="{l:T Zh='高级：单独指定 Identity / API 地址', En='Advanced: separate Identity / API URLs'}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                        <StackPanel Spacing="8">
+                            <TextBox x:Name="IdentityUrlBox" Header="{l:T Zh='Identity 地址（可选）', En='Identity URL (optional)'}" PlaceholderText="{l:T Zh='默认：服务器地址/identity', En='Default: server URL/identity'}" />
+                            <TextBox x:Name="ApiUrlBox" Header="{l:T Zh='API 地址（可选）', En='API URL (optional)'}" PlaceholderText="{l:T Zh='默认：服务器地址/api', En='Default: server URL/api'}" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
+
+                <RadioButtons x:Name="MethodBox" Header="{l:T Zh='登录方式', En='Sign-in method'}" MaxColumns="2" SelectionChanged="OnMethodChanged">
+                    <RadioButton Content="{l:T Zh='邮箱 + 主密码', En='Email + master password'}" />
+                    <RadioButton Content="API Key" />
+                </RadioButtons>
+
+                <TextBox x:Name="EmailBox" Header="{l:T Zh='邮箱', En='Email'}" InputScope="EmailSmtpAddress" />
+                <StackPanel x:Name="ApiKeyPanel" Spacing="8" Visibility="Collapsed">
+                    <TextBox x:Name="ClientIdBox" Header="client_id" PlaceholderText="user.xxxxxxxx" />
+                    <PasswordBox x:Name="ClientSecretBox" Header="client_secret" />
+                    <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="{l:T Zh='API Key 可在网页版 设置 → 安全 → 密钥 中查看。解密密钥仍然需要主密码。', En='Find your API key in the web vault under Settings → Security → Keys. The master password is still needed to decrypt.'}" />
+                </StackPanel>
+                <PasswordBox x:Name="PasswordBox" Header="{l:T Zh='主密码', En='Master password'}" KeyDown="OnPasswordKeyDown" />
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="LoginButton" Content="{l:T Zh='登录', En='Sign in'}" Style="{StaticResource AccentButtonStyle}" MinWidth="120" Click="OnLogin" />
+                    <Button x:Name="CancelButton" Content="{l:T Zh='取消', En='Cancel'}" Visibility="Collapsed" Click="OnCancel" />
+                    <ProgressRing x:Name="Busy" IsActive="False" Width="24" Height="24" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="TwoFactorPanel" Spacing="12" Visibility="Collapsed">
+                <TextBlock Text="{l:T Zh='两步验证', En='Two-step login'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <ComboBox x:Name="ProviderBox" Header="{l:T Zh='验证方式', En='Method'}" HorizontalAlignment="Stretch" SelectionChanged="OnProviderChanged" />
+                <TextBox x:Name="CodeBox" Header="{l:T Zh='验证码', En='Code'}" KeyDown="OnCodeKeyDown" />
+                <CheckBox x:Name="RememberBox" Content="{l:T Zh='在这台设备上记住（30 天内免验证）', En='Remember this device (30 days)'}" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="{l:T Zh='验证', En='Verify'}" Style="{StaticResource AccentButtonStyle}" MinWidth="120" Click="OnSubmitTwoFactor" />
+                    <Button x:Name="SendEmailButton" Content="{l:T Zh='发送邮件验证码', En='Send email code'}" Visibility="Collapsed" Click="OnSendEmail" />
+                    <Button Content="{l:T Zh='返回', En='Back'}" Click="OnBack" />
+                    <ProgressRing x:Name="TwoFactorBusy" IsActive="False" Width="24" Height="24" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="NewDevicePanel" Spacing="12" Visibility="Collapsed">
+                <TextBlock Text="{l:T Zh='新设备验证', En='New device verification'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Text="{l:T Zh='Bitwarden 已向你的邮箱发送了一个验证码，用于确认这台新设备。', En='Bitwarden sent a code to your email to verify this new device.'}" />
+                <TextBox x:Name="OtpBox" Header="{l:T Zh='邮件中的验证码', En='Code from the email'}" KeyDown="OnOtpKeyDown" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="{l:T Zh='验证', En='Verify'}" Style="{StaticResource AccentButtonStyle}" MinWidth="120" Click="OnSubmitOtp" />
+                    <Button Content="{l:T Zh='返回', En='Back'}" Click="OnBack" />
+                    <ProgressRing x:Name="OtpBusy" IsActive="False" Width="24" Height="24" />
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BwSshAgent.App.Views.ShellPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:BwSshAgent.App">
+    <NavigationView x:Name="Nav" IsBackButtonVisible="Collapsed" IsSettingsVisible="False" PaneDisplayMode="Left"
+                    OpenPaneLength="200" SelectionChanged="OnSelectionChanged">
+        <NavigationView.MenuItems>
+            <NavigationViewItem Content="{l:T Zh='SSH 密钥', En='SSH keys'}" Tag="keys" Icon="Permissions" />
+            <NavigationViewItem Content="{l:T Zh='审计日志', En='Audit log'}" Tag="audit">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE81C;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="{l:T Zh='诊断', En='Diagnostics'}" Tag="diag">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE9D9;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
+        <NavigationView.FooterMenuItems>
+            <NavigationViewItem Content="{l:T Zh='设置', En='Settings'}" Tag="settings" Icon="Setting" />
+        </NavigationView.FooterMenuItems>
+        <Frame x:Name="ContentFrame" />
+    </NavigationView>
+</Page>

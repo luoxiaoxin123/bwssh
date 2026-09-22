@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 1.2.3"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          INPUT: ${{ inputs.version }}
+        run: |
+          $v = if ($env:TAG) { $env:TAG } else { $env:INPUT }
+          "value=$($v.TrimStart('v', 'V'))" >> $env:GITHUB_OUTPUT
+
+      - name: Ensure OpenSSH client (used by tests)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:SystemRoot\System32\OpenSSH\ssh-keygen.exe")) {
+            Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+          }
+
+      - name: Test
+        run: dotnet test --project tests/BwSshAgent.Core.Tests
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build installer
+        shell: pwsh
+        run: ./build.ps1 -Version "${{ steps.version.outputs.value }}"
+
+      - name: Attach installer to release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload $env:TAG (Get-ChildItem artifacts/installer/*.exe).FullName --clobber
+
+      - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bwssh-setup-${{ steps.version.outputs.value }}
+          path: artifacts/installer/*.exe

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="BwSshAgent.App.ApprovalWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:BwSshAgent.App"
+    Title="SSH 签名请求">
+    <Grid Padding="20" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Spacing="4">
+            <TextBlock x:Name="TitleText" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+            <InfoBar x:Name="ForwardWarning" IsOpen="False" IsClosable="False" Severity="Warning"
+                     Title="{l:T Zh='这是经过 SSH 代理转发的请求', En='This request comes through agent forwarding'}"
+                     Message="{l:T Zh='远程主机正在通过转发的 agent 使用你的密钥。只有在你确实发起了该操作时才批准。', En='A remote host is using your key through a forwarded agent. Only approve if you started this.'}" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="6">
+                <TextBlock x:Name="KeyText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <TextBlock x:Name="ProcessText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <TextBlock x:Name="DetailText" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="ApproveButton" Style="{StaticResource AccentButtonStyle}" Click="OnApprove" />
+            <Button x:Name="GrantButton" Click="OnGrant" />
+            <Button x:Name="DenyButton" Content="{l:T Zh='拒绝', En='Deny'}" Click="OnDeny" />
+        </StackPanel>
+    </Grid>
+</Window>
