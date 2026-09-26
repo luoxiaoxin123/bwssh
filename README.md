@@ -115,3 +115,6 @@ README 里的演示动图由 [docs/demo](docs/demo) 生成：`stage.html` 用 HT
 ## 许可证
 
 [Apache License 2.0](LICENSE)
+
+## LINK
+[Linux.do](https://linux.do/)
