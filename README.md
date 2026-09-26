@@ -6,6 +6,10 @@ bwssh 是一个 Windows 原生（WinUI 3）的 SSH agent。它从 Bitwarden 密�
 
 支持 **Bitwarden 官方账号**（bitwarden.com / bitwarden.eu），也支持**自建服务器**上的账号。
 
+**宣传片**（1 分 25 秒，有声音）：
+
+https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
+
 ![Claude Code 执行 git push 时，bwssh 在右下角弹出审批通知，显示完整程序链；点“15 分钟内放行”后，同一个 Agent 再次推送不再询问](docs/images/demo-approve.zh.webp)
 
 ## 功能

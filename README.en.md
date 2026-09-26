@@ -6,6 +6,10 @@ bwssh is a native Windows (WinUI 3) SSH agent. It reads SSH keys from your Bitwa
 
 It works with **official Bitwarden accounts** (bitwarden.com / bitwarden.eu) and with accounts on **self-hosted servers**.
 
+**Promo video** (1:25, with sound; on-screen text in Chinese):
+
+https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
+
 ![Claude Code runs git push; bwssh shows an approval toast with the full process chain; after "Allow 15 min" the next push from the same agent goes through without a prompt](docs/images/demo-approve.en.webp)
 
 ## Features
