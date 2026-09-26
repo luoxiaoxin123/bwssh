@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>bwssh promo</title>
+<!--
+  Promo video (1920×1080). Every frame is a pure function of time: promo.py calls window.seek(t) per frame,
+  screenshots it and pipes the frames to ffmpeg together with a synthesized soundtrack (window.AUDIO).
+  The UI demos are stage.html scenes embedded as iframes, so this page must be served over http (promo.py does that).
+  Open it through any local http server to preview in real time.
+-->
+<style>
+  :root {
+    --bg: #070b16;
+    --fg: #f3f6ff;
+    --mut: rgba(226, 234, 255, 0.62);
+    --acc: #7cc4ff;
+    --acc2: #a78bfa;
+    --ok: #4ade80;
+    --warn: #ffb454;
+    --bad: #ff6b6b;
+    --glass: rgba(255, 255, 255, 0.055);
+    --line: rgba(255, 255, 255, 0.12);
+    --sans: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    --mono: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+    --icons: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #000; overflow: hidden; }
+  body { font-family: var(--sans); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  .i { font-family: var(--icons); font-style: normal; font-weight: normal; line-height: 1; display: inline-block; }
+  em { font-style: normal; color: var(--acc); }
+  em.ok { color: var(--ok); } em.bad { color: var(--bad); }
+  .ch { display: inline-block; white-space: pre; }
+
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  .blob { position: absolute; width: 1400px; height: 1400px; border-radius: 50%; left: 0; top: 0; }
+  #b1 { background: radial-gradient(circle, rgba(37, 99, 235, 0.42) 0%, rgba(37, 99, 235, 0) 62%); }
+  #b2 { background: radial-gradient(circle, rgba(124, 58, 237, 0.34) 0%, rgba(124, 58, 237, 0) 62%); }
+  #b3 { background: radial-gradient(circle, rgba(14, 165, 233, 0.26) 0%, rgba(14, 165, 233, 0) 62%); }
+  #grid {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.075) 1.2px, transparent 1.2px); background-size: 36px 36px;
+    -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 50%, #000 30%, transparent 100%);
+  }
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 80% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55) 100%); pointer-events: none; }
+  #black { position: absolute; inset: 0; background: #000; pointer-events: none; }
+
+  section { position: absolute; inset: 0; }
+  .abs { position: absolute; left: 0; top: 0; }
+  .center-x { position: absolute; left: 0; right: 0; text-align: center; }
+  h1 { font-size: 64px; line-height: 1.25; font-weight: 700; letter-spacing: 0.5px; }
+  h2 { font-size: 56px; line-height: 1.25; font-weight: 700; }
+  .sub { font-size: 28px; line-height: 1.5; color: var(--mut); }
+  .glass { background: var(--glass); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35); }
+  .tag { display: inline-flex; align-items: center; gap: 10px; padding: 8px 18px; border-radius: 999px; font-size: 22px; font-weight: 600; background: rgba(124, 196, 255, 0.12); color: var(--acc); border: 1px solid rgba(124, 196, 255, 0.3); }
+  .num { font-size: 120px; font-weight: 800; line-height: 1; background: linear-gradient(135deg, #7cc4ff, #a78bfa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .bullet { display: flex; align-items: center; gap: 18px; font-size: 30px; line-height: 1.4; }
+  .bullet .dot { flex: none; width: 40px; height: 40px; border-radius: 50%; background: rgba(74, 222, 128, 0.16); color: var(--ok); display: grid; place-items: center; font-size: 20px; }
+
+  /* terminal (cold open) */
+  .term { background: #0d1117; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; overflow: hidden; box-shadow: 0 40px 100px rgba(0, 0, 0, 0.55); }
+  .term .bar { height: 44px; background: #161b22; display: flex; align-items: center; gap: 9px; padding: 0 18px; }
+  .term .bar i { width: 13px; height: 13px; border-radius: 50%; background: #3a404a; }
+  .term .bar span { margin-left: 12px; font-size: 16px; color: #8b949e; }
+  .term pre { font: 21px/33px var(--mono); padding: 18px 24px; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; }
+  .t-dim { color: #7d8590; } .t-ok { color: #56d364; } .t-user { color: #fff; } .t-bad { color: #ff7b72; } .t-b { color: #fff; font-weight: 700; }
+  .caret { display: inline-block; width: 11px; height: 22px; background: #c9d1d9; vertical-align: -4px; }
+
+  /* diagram */
+  .node { position: absolute; width: 300px; height: 150px; border-radius: 22px; background: rgba(16, 22, 40, 0.92); border: 1px solid rgba(255, 255, 255, 0.16); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4); }
+  .node .i { font-size: 44px; }
+  .node img { width: 52px; height: 52px; }
+  .node b { font-size: 28px; }
+  .node small { font-size: 18px; color: var(--mut); }
+  .zone { position: absolute; border-radius: 30px; border: 2px dashed; }
+  .zone .lbl { position: absolute; top: -18px; left: 30px; padding: 2px 14px; font-size: 22px; font-weight: 600; background: var(--bg); border-radius: 8px; display: flex; gap: 8px; align-items: center; }
+  .pkt { position: absolute; left: 0; top: 0; padding: 8px 16px; border-radius: 999px; font-size: 20px; font-weight: 600; white-space: nowrap; display: flex; gap: 8px; align-items: center; box-shadow: 0 0 30px currentColor; }
+  .pkt.req { background: #0b2a4a; color: #7cc4ff; border: 1px solid #7cc4ff; }
+  .pkt.sig { background: #0b3321; color: #4ade80; border: 1px solid #4ade80; }
+  .pkt.key { background: #3a2708; color: #ffb454; border: 1px solid #ffb454; }
+  .pkt.bad { background: #3b0d0d; color: #ff6b6b; border: 1px solid #ff6b6b; }
+  .bubble { position: absolute; left: 0; top: 0; background: #f8f9fc; color: #1a1a1a; border-radius: 14px; padding: 14px 18px; font-size: 19px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45); display: flex; align-items: center; gap: 16px; white-space: nowrap; }
+  .bubble img { width: 26px; height: 26px; }
+  .bubble .btn { background: #0f7b0f; color: #fff; border-radius: 6px; padding: 6px 16px; font-weight: 600; }
+  .caption { position: absolute; left: 0; right: 0; top: 930px; text-align: center; font-size: 32px; font-weight: 600; }
+
+  /* context card */
+  .ctx pre { font: 22px/40px var(--mono); padding: 12px 34px 30px; color: #c9d1d9; white-space: pre-wrap; }
+  .ctx .hd { padding: 22px 34px 10px; font-size: 20px; color: var(--mut); display: flex; align-items: center; gap: 10px; }
+  .scan { position: absolute; left: 0; right: 0; height: 90px; background: linear-gradient(180deg, rgba(74, 222, 128, 0), rgba(74, 222, 128, 0.22) 70%, rgba(74, 222, 128, 0.9) 100%); }
+  .badge { position: absolute; left: 0; top: 0; padding: 12px 26px; border-radius: 999px; background: #0b3321; color: var(--ok); border: 1px solid var(--ok); font-size: 26px; font-weight: 700; display: flex; gap: 12px; align-items: center; box-shadow: 0 0 40px rgba(74, 222, 128, 0.35); white-space: nowrap; }
+
+  /* gates */
+  .gate { position: absolute; width: 16px; height: 260px; border-radius: 8px; }
+  .gate-lbl { position: absolute; width: 360px; text-align: center; }
+  .gate-lbl b { display: block; font-size: 30px; }
+  .gate-lbl span { font-size: 21px; color: var(--mut); }
+  .cmd { position: absolute; left: 0; top: 0; background: #0d1117; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 14px; padding: 16px 22px; font: 21px/32px var(--mono); color: #c9d1d9; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); white-space: nowrap; }
+  .mtoast { position: absolute; left: 0; top: 0; width: 400px; background: #f8f9fc; color: #1a1a1a; border-radius: 12px; padding: 16px 18px; font-size: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
+  .mtoast .h { display: flex; gap: 8px; align-items: center; font-size: 15px; color: #555; margin-bottom: 8px; }
+  .mtoast .h img { width: 18px; height: 18px; }
+  .mtoast .b { display: flex; gap: 8px; margin-top: 12px; }
+  .mtoast .b div { flex: 1; text-align: center; padding: 7px 0; border-radius: 6px; font-size: 16px; background: #fff; border: 1px solid #ddd; }
+  .mtoast .b .g { background: #0f7b0f; color: #fff; border-color: transparent; }
+  .mtoast .b .r { background: #c42b1c; color: #fff; border-color: transparent; }
+
+  /* hub */
+  .chip { position: absolute; left: 0; top: 0; padding: 16px 28px; border-radius: 18px; font-size: 28px; font-weight: 600; background: rgba(16, 22, 40, 0.92); border: 1px solid rgba(255, 255, 255, 0.16); display: flex; gap: 14px; align-items: center; white-space: nowrap; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
+  .chip .i { font-size: 28px; color: var(--acc); }
+  .hub { position: absolute; width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, #16254a, #0c1326); border: 2px solid rgba(124, 196, 255, 0.5); display: grid; place-items: center; box-shadow: 0 0 80px rgba(124, 196, 255, 0.35); }
+  .hub img { width: 110px; height: 110px; }
+
+  /* demo cards */
+  .card { position: absolute; border-radius: 18px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 50px 120px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.4); background: #000; }
+  .card iframe { position: absolute; left: 0; top: 0; width: 960px; height: 600px; border: 0; transform-origin: 0 0; }
+
+  /* vault */
+  .vault .row { display: flex; align-items: center; gap: 18px; padding: 16px 26px; border-top: 1px solid var(--line); font-size: 24px; }
+  .vault .row .i { font-size: 26px; color: var(--warn); }
+  .vault .row small { margin-left: auto; font: 17px var(--mono); color: var(--mut); }
+  .dev { position: absolute; left: 0; top: 0; width: 230px; padding: 20px 0; text-align: center; }
+  .dev .i { font-size: 48px; }
+  .dev div { font-size: 22px; margin-top: 8px; }
+  .dev small { font-size: 18px; color: var(--ok); }
+  .tile { position: absolute; left: 0; top: 0; width: 240px; height: 130px; padding: 22px 24px; }
+  .tile b { display: block; font-size: 34px; background: linear-gradient(135deg, #7cc4ff, #a78bfa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tile span { font-size: 21px; color: var(--mut); }
+  .pill { display: inline-flex; align-items: center; gap: 14px; padding: 16px 34px; border-radius: 999px; background: rgba(124, 196, 255, 0.12); border: 1px solid rgba(124, 196, 255, 0.45); font: 600 34px var(--mono); color: #dbeeff; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="blob" id="b1"></div><div class="blob" id="b2"></div><div class="blob" id="b3"></div>
+  <div id="grid"></div>
+
+  <!-- 1. cold open -->
+  <section id="s-open">
+    <div class="center-x" style="top:150px"><h2 id="o-t1">你的私钥，离 Agent 只有<em class="bad">一条命令</em>的距离</h2></div>
+    <div class="term abs" id="o-term" style="left:170px;top:300px;width:1000px;height:470px">
+      <div class="bar"><i></i><i></i><i></i><span>agent — ~/src/webapp</span></div><pre id="o-pre"></pre>
+    </div>
+    <div class="abs" id="o-cloud" style="width:260px;text-align:center">
+      <div class="i" id="o-cloud-i" style="font-size:150px;color:#cfe3ff">&#xE753;</div>
+      <div style="font-size:30px;font-weight:600;margin-top:6px">AI 服务商</div>
+      <div style="font-size:21px;color:var(--mut)">云端模型 · 日志 · 训练数据</div>
+    </div>
+    <div class="pkt bad" id="o-pkt"><span class="i">&#xE192;</span>id_ed25519</div>
+    <div class="caption" id="o-cap" style="top:860px">私钥一旦进入 Agent 的上下文，就会<em class="bad">被发送到云端</em>。</div>
+  </section>
+
+  <!-- 2. title -->
+  <section id="s-title">
+    <div class="abs" id="t-glow" style="left:760px;top:180px;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(124,196,255,.45),rgba(124,196,255,0) 65%)"></div>
+    <img class="abs" id="t-logo" src="../../src/BwSshAgent.App/Assets/app.png" style="left:870px;top:260px;width:180px;height:180px">
+    <div class="center-x" style="top:470px"><div id="t-name" style="font-size:128px;font-weight:800;letter-spacing:2px">bwssh</div></div>
+    <div class="center-x" style="top:660px"><h1 id="t-tag">把 <em>Agent</em> 和 <em>SSH 密钥</em>隔离开</h1></div>
+    <div class="center-x" style="top:770px"><div class="sub" id="t-sub">由 Bitwarden 驱动的 Windows 原生 SSH agent</div></div>
+  </section>
+
+  <!-- 3. architecture -->
+  <section id="s-arch">
+    <div class="center-x" style="top:110px"><h2 id="a-title">Agent 只拿得到<em>签名</em>，永远碰不到<em class="ok">私钥</em></h2></div>
+    <div class="zone" id="a-zoneA" style="left:110px;top:430px;width:840px;height:430px;border-color:rgba(255,180,84,.55)"><div class="lbl" style="color:var(--warn)"><span class="i">&#xE99A;</span>Agent 能碰到的范围</div></div>
+    <div class="zone" id="a-zoneK" style="left:1030px;top:430px;width:800px;height:430px;border-color:rgba(74,222,128,.6)"><div class="lbl" style="color:var(--ok)"><span class="i">&#xEA18;</span>密钥安全区</div></div>
+    <svg class="abs" width="1920" height="1080" style="overflow:visible">
+      <g stroke="rgba(255,255,255,.35)" stroke-width="3" fill="none" stroke-linecap="round">
+        <path id="a-l1" d="M450 560 H610"/><path id="a-l2" d="M910 560 H1070"/><path id="a-l3" d="M1370 560 H1510"/><path id="a-l4" d="M300 635 V730"/>
+      </g>
+    </svg>
+    <div class="node" id="a-A" style="left:150px;top:485px"><span class="i" style="color:var(--warn)">&#xE99A;</span><b>AI Agent</b><small>Claude Code 等</small></div>
+    <div class="node" id="a-B" style="left:610px;top:485px"><span class="i">&#xE756;</span><b>ssh / git</b><small>Windows OpenSSH</small></div>
+    <div class="node" id="a-C" style="left:1070px;top:485px"><img src="../../src/BwSshAgent.App/Assets/app.png"><b>bwssh</b><small>SSH agent</small></div>
+    <div class="node" id="a-D" style="left:1510px;top:485px"><span class="i" style="color:var(--ok)">&#xE72E;</span><b>Bitwarden</b><small>加密密码库 · 多端同步</small></div>
+    <div class="node" id="a-F" style="left:180px;top:730px;width:240px;height:100px;flex-direction:row;gap:14px"><span class="i" style="font-size:34px">&#xE8B7;</span><div><b style="font-size:24px">~/.ssh/</b><br><small id="a-F-t">没有私钥文件</small></div></div>
+    <div class="pkt req" id="a-p1">签名请求</div>
+    <div class="pkt key" id="a-p2"><span class="i">&#xE192;</span>私钥（只在内存中）</div>
+    <div class="pkt sig" id="a-p3"><span class="i">&#xE73E;</span>签名</div>
+    <div class="pkt bad" id="a-p4">cat ~/.ssh/id_ed25519</div>
+    <div class="bubble" id="a-bub"><img src="../../src/BwSshAgent.App/Assets/app.png"><span>claude.exe 请求使用「GitHub」</span><span class="btn" id="a-bub-btn">批准</span></div>
+    <div class="badge" id="a-okA"><span class="i">&#xE73E;</span>连接成功</div>
+    <div class="caption" id="a-cap1">Agent 照常用 ssh / git 发起连接</div>
+    <div class="caption" id="a-cap2">bwssh 弹出审批，<em>由你决定</em></div>
+    <div class="caption" id="a-cap3">私钥只在 bwssh 的内存里完成签名，<em class="ok">交回去的只有签名</em></div>
+    <div class="caption" id="a-cap4">磁盘上没有私钥文件，<em class="bad">Agent 想偷看也看不到</em></div>
+  </section>
+
+  <!-- 4. point 1 -->
+  <section id="s-p1">
+    <div class="abs" style="left:140px;top:250px;width:780px">
+      <div class="num" id="p1-num">01</div>
+      <h1 id="p1-h" style="margin-top:24px">私钥，不会上传到<br><em>AI 服务商</em></h1>
+      <div style="margin-top:44px;display:flex;flex-direction:column;gap:26px">
+        <div class="bullet" id="p1-b1"><span class="dot i">&#xE73E;</span>私钥不落盘，Agent 读不到</div>
+        <div class="bullet" id="p1-b2"><span class="dot i">&#xE73E;</span>对话上下文里没有任何密钥</div>
+        <div class="bullet" id="p1-b3"><span class="dot i">&#xE73E;</span>发给 AI 服务商的，只有命令和输出</div>
+      </div>
+    </div>
+    <div class="glass ctx abs" id="p1-card" style="left:1000px;top:230px;width:780px;height:600px;overflow:hidden">
+      <div class="hd"><span class="i">&#xE753;</span>Agent 上下文（会发送给 AI 服务商）</div>
+      <pre id="p1-pre"></pre>
+      <div class="scan" id="p1-scan"></div>
+    </div>
+    <div class="badge" id="p1-badge"><span class="i">&#xE73E;</span>扫描完毕：未发现任何私钥</div>
+  </section>
+
+  <!-- 5a. point 2: two gates -->
+  <section id="s-p2">
+    <div class="center-x" style="top:90px">
+      <div class="tag" id="p2-tag">02 · 双重把关</div>
+      <h2 id="p2-h" style="margin-top:20px">Agent 先审<em>命令</em>，bwssh 再审<em class="ok">密钥</em></h2>
+    </div>
+    <div class="gate" id="p2-g1" style="left:792px;top:470px"></div>
+    <div class="gate" id="p2-g2" style="left:1212px;top:470px"></div>
+    <div class="gate-lbl" id="p2-l1" style="left:620px;top:340px"><b id="p2-l1b">Agent 自带审查</b><span>如 auto 模式：这条命令合规吗？</span></div>
+    <div class="gate-lbl" id="p2-l2" style="left:1040px;top:340px"><b id="p2-l2b">bwssh 审批</b><span>谁 · 用哪把密钥 · 连哪台主机</span></div>
+    <div class="abs" id="p2-srv" style="width:240px;text-align:center"><div class="i" style="font-size:96px">&#xE968;</div><div style="font-size:26px;font-weight:600;margin-top:10px">prod-server</div><div id="p2-srv-ok" style="font-size:22px;color:var(--ok);margin-top:4px">✓ 已执行</div></div>
+    <div class="cmd" id="p2-cmd"><span style="color:#7d8590">$</span> ssh deploy@prod-server<br>&nbsp;&nbsp;systemctl restart api</div>
+    <div class="mtoast" id="p2-toast"><div class="h"><img src="../../src/BwSshAgent.App/Assets/app.png">bwssh</div><b>SSH 登录请求 · 生产服务器</b><div style="color:#444;font-size:16px;margin-top:2px">claude.exe → bash.exe → ssh.exe</div>
+      <div class="b"><div class="g" id="p2-approve">批准</div><div>15 分钟内放行</div><div class="r">拒绝</div></div></div>
+  </section>
+
+  <!-- 5b. point 2: works with every agent -->
+  <section id="s-hub">
+    <div class="center-x" style="top:90px">
+      <div class="tag" id="h-tag">02 · 所有 Agent 通用</div>
+      <h2 id="h-h" style="margin-top:20px">直接替代 OpenSSH agent，<em>任何 Agent 开箱即用</em></h2>
+    </div>
+    <svg class="abs" width="1920" height="1080" id="h-svg"></svg>
+    <div class="hub" id="h-hub" style="left:860px;top:520px"><img src="../../src/BwSshAgent.App/Assets/app.png"></div>
+    <div class="center-x" id="h-pipe" style="top:750px;font:24px var(--mono);color:var(--mut)">\\.\pipe\openssh-ssh-agent</div>
+    <div class="center-x" id="h-sub" style="top:900px"><div class="sub">不用插件、不改 Agent，调用 ssh / git 的程序都能直接用</div></div>
+  </section>
+
+  <!-- 6. demo: approval -->
+  <section id="s-d1">
+    <div class="center-x" style="top:44px"><div class="tag" id="d1-tag"><span class="i">&#xE714;</span>界面演示</div></div>
+    <div class="center-x" style="top:108px"><h2 id="d1-h" style="font-size:48px">每次用密钥都有通知，<em>完整程序链</em>一目了然</h2></div>
+    <div class="card" id="d1-card" style="left:312px;top:232px;width:1296px;height:810px"><iframe id="f-approve" src="stage.html?scene=approve&lang=zh&render=1&nocap=1"></iframe></div>
+  </section>
+
+  <!-- 7. point 3 -->
+  <section id="s-p3">
+    <div class="abs" style="left:140px;top:170px;width:780px">
+      <div class="num" id="p3-num">03</div>
+      <h1 id="p3-h" style="margin-top:24px">复用 <em>Bitwarden</em>，<br>多端同步，原生轻量</h1>
+      <div style="margin-top:40px;display:flex;flex-direction:column;gap:22px">
+        <div class="bullet" id="p3-b1"><span class="dot i">&#xE73E;</span>密码库里已有的 SSH 密钥，直接复用</div>
+        <div class="bullet" id="p3-b2"><span class="dot i">&#xE73E;</span>官方账号、自托管服务器都支持</div>
+        <div class="bullet" id="p3-b3"><span class="dot i">&#xE73E;</span>多台电脑登录同一账号，自动同步</div>
+      </div>
+    </div>
+    <div class="glass tile" id="p3-t1" style="left:140px;top:810px"><b>WinUI 3</b><span>Windows 原生开发</span></div>
+    <div class="glass tile" id="p3-t2" style="left:400px;top:810px"><b>托盘常驻</b><span>开机自启，安静后台</span></div>
+    <div class="glass tile" id="p3-t3" style="left:660px;top:810px"><b>占用极小</b><span>不带浏览器内核</span></div>
+    <div class="glass vault abs" id="p3-vault" style="left:1060px;top:190px;width:640px">
+      <div style="padding:22px 26px;display:flex;align-items:center;gap:14px;font-size:26px;font-weight:700"><span class="i" style="color:var(--ok);font-size:30px">&#xE72E;</span>Bitwarden 密码库<span style="margin-left:auto;font-size:18px;color:var(--ok);font-weight:600"><span class="i" id="p3-sync" style="font-size:16px">&#xE895;</span> 已同步</span></div>
+      <div class="row"><span class="i">&#xE192;</span>GitHub<small>ssh-ed25519</small></div>
+      <div class="row"><span class="i">&#xE192;</span>生产服务器<small>ssh-ed25519</small></div>
+      <div class="row"><span class="i">&#xE192;</span>家里的 NAS<small>ssh-rsa</small></div>
+    </div>
+    <svg class="abs" width="1920" height="1080" id="p3-svg"></svg>
+    <div class="glass dev" id="p3-d1"><span class="i">&#xE977;</span><div>办公室电脑</div><small>✓ 已同步</small></div>
+    <div class="glass dev" id="p3-d2"><span class="i">&#xE977;</span><div>家里电脑</div><small>✓ 已同步</small></div>
+    <div class="glass dev" id="p3-d3"><span class="i">&#xE7F8;</span><div>笔记本</div><small>✓ 已同步</small></div>
+  </section>
+
+  <!-- 8. demo: keys -->
+  <section id="s-d2">
+    <div class="center-x" style="top:44px"><div class="tag" id="d2-tag"><span class="i">&#xE714;</span>界面演示</div></div>
+    <div class="center-x" style="top:108px"><h2 id="d2-h" style="font-size:48px">在 bwssh 里生成密钥，<em>直接存进 Bitwarden</em></h2></div>
+    <div class="card" id="d2-card" style="left:312px;top:232px;width:1296px;height:810px"><iframe id="f-keys" src="stage.html?scene=keys&lang=zh&render=1&nocap=1"></iframe></div>
+  </section>
+
+  <!-- 9. more -->
+  <section id="s-more">
+    <div class="center-x" style="top:70px"><h2 id="m-h">还有更多</h2></div>
+    <div class="card" id="m-c1" style="left:40px;top:200px;width:900px;height:562px"><iframe id="f-unlock" src="stage.html?scene=unlock&lang=zh&render=1&nocap=1"></iframe></div>
+    <div class="card" id="m-c2" style="left:980px;top:200px;width:900px;height:562px"><iframe id="f-audit" src="stage.html?scene=audit&lang=zh&render=1&nocap=1"></iframe></div>
+    <div class="abs" id="m-l1" style="left:40px;top:790px;width:900px;text-align:center;font-size:30px;font-weight:600">锁定时，在通知里<em>用 Windows Hello 解锁</em></div>
+    <div class="abs" id="m-l2" style="left:980px;top:790px;width:900px;text-align:center;font-size:30px;font-weight:600">审计日志，<em>每次签名都有据可查</em></div>
+    <div class="center-x" style="top:890px;display:flex;justify-content:center;gap:20px" id="m-chips"></div>
+  </section>
+
+  <!-- 10. outro -->
+  <section id="s-end">
+    <div class="abs" id="e-glow" style="left:760px;top:120px;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(124,196,255,.45),rgba(124,196,255,0) 65%)"></div>
+    <img class="abs" id="e-logo" src="../../src/BwSshAgent.App/Assets/app.png" style="left:885px;top:210px;width:150px;height:150px">
+    <div class="center-x" style="top:380px"><div id="e-name" style="font-size:110px;font-weight:800;letter-spacing:2px">bwssh</div></div>
+    <div class="center-x" style="top:550px"><h1 id="e-tag" style="font-size:54px">把密钥留在<em class="ok">密码库</em>，把命令交给 <em>Agent</em>。</h1></div>
+    <div class="center-x" style="top:690px"><div class="pill" id="e-url"><span class="i">&#xE71B;</span>github.com/luoxiaoxin123/bwssh</div></div>
+    <div class="center-x" style="top:820px"><div class="sub" id="e-sub">免费开源 · Apache-2.0 · Windows 10 / 11 · 安装无需管理员权限</div></div>
+  </section>
+
+  <div id="vignette"></div>
+  <div id="black"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeIO = u => (u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2);
+const easeOut = u => 1 - (1 - u) ** 3;
+const expo = u => (u >= 1 ? 1 : 1 - 2 ** (-10 * u));
+const back = (u, s = 1.6) => 1 + (s + 1) * (u - 1) ** 3 + s * (u - 1) ** 2;
+const prog = (t, a, b, f = easeIO) => f(clamp((t - a) / (b - a)));
+
+// ---------- timeline ----------
+const SECTIONS = [
+  ["s-open", 0, 5.4], ["s-title", 5.4, 9.6], ["s-arch", 9.6, 21.0], ["s-p1", 21.0, 27.6],
+  ["s-p2", 27.6, 34.6], ["s-hub", 34.6, 40.2], ["s-d1", 40.2, 51.2], ["s-p3", 51.2, 59.2],
+  ["s-d2", 59.2, 68.2], ["s-more", 68.2, 77.8], ["s-end", 77.8, 85.0],
+].map(([id, t0, t1]) => ({ el: document.getElementById(id), t0, t1, last: id === "s-end" }));
+const DURATION = 85.0;
+/** Stage demos: iframe, section window, and the local stage time range played across it. */
+const DEMOS = [
+  { id: "f-approve", g0: 40.7, l0: 0.2, l1: 10.8 },
+  { id: "f-keys", g0: 59.7, l0: 0.4, l1: 8.9 },
+  { id: "f-unlock", g0: 68.7, l0: 2.2, l1: 11.2 },
+  { id: "f-audit", g0: 68.9, l0: 1.0, l1: 9.9 },
+];
+const AUDIO = []; // {t, k}: sound effects for promo.py
+const sfx = (t, k) => AUDIO.push({ t: +t.toFixed(3), k });
+
+// ---------- animation primitives ----------
+function split(el) {
+  const chars = [];
+  (function walk(node) {
+    for (const n of [...node.childNodes]) {
+      if (n.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        for (const c of n.textContent) {
+          const s = document.createElement("span"); s.className = "ch"; s.textContent = c; frag.append(s); chars.push(s);
+        }
+        n.replaceWith(frag);
+      } else if (n.nodeName !== "BR") walk(n);
+    }
+  })(el);
+  return chars;
+}
+const anims = [];
+/** kind: chars | up | pop | fade | left | right; t = start time. */
+function anim(sel, t, kind = "up", opt = {}) {
+  const el = typeof sel === "string" ? $(sel) : sel;
+  const a = { el, t, kind, dur: opt.dur ?? (kind === "pop" ? 0.7 : 0.9), opt };
+  if (kind === "chars") a.chars = split(el);
+  anims.push(a);
+  return a;
+}
+function applyAnims(t) {
+  for (const a of anims) {
+    const u = clamp((t - a.t) / a.dur), s = a.el.style;
+    if (a.kind === "chars") {
+      const st = a.opt.stagger ?? 0.03;
+      a.chars.forEach((c, i) => {
+        const v = expo(clamp((t - a.t - i * st) / 0.7));
+        c.style.opacity = v;
+        c.style.transform = `translateY(${(1 - v) * 0.5}em)`;
+        c.style.filter = v < 1 ? `blur(${(1 - v) * 8}px)` : "";
+      });
+      continue;
+    }
+    let tf = "", op = 1;
+    const e = expo(u);
+    if (a.kind === "up") { op = e; tf = `translateY(${(1 - e) * (a.opt.dy ?? 50)}px)`; }
+    else if (a.kind === "left") { op = e; tf = `translateX(${(1 - e) * -80}px)`; }
+    else if (a.kind === "right") { op = e; tf = `translateX(${(1 - e) * 80}px)`; }
+    else if (a.kind === "pop") { op = clamp(u * 4); tf = `scale(${lerp(a.opt.from ?? 0.5, 1, back(u))})`; }
+    else if (a.kind === "fade") { op = easeIO(u); }
+    s.opacity = op;
+    s.transform = (a.opt.base || "") + tf;
+    s.visibility = op <= 0.001 ? "hidden" : "visible";
+  }
+}
+/** Place an absolutely positioned element centered on (x, y). */
+function place(el, x, y, extra = "") { el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) ${extra}`; }
+function show(el, on, o = 1) { el.style.visibility = on ? "visible" : "hidden"; el.style.opacity = on ? o : 0; }
+/** A packet travelling from p to q between t0 and t1, fading at both ends. */
+function packet(el, t, t0, t1, p, q) {
+  const on = t >= t0 - 0.15 && t <= t1 + 0.2;
+  if (!on) return show(el, false);
+  const u = prog(t, t0, t1);
+  const o = Math.min(clamp((t - t0 + 0.15) / 0.15), clamp((t1 + 0.2 - t) / 0.2));
+  show(el, true, o);
+  place(el, lerp(p[0], q[0], u), lerp(p[1], q[1], u));
+}
+function swap(el, t, a, b) { // caption visible in [a, b) with crossfades
+  const o = Math.min(prog(t, a, a + 0.35), 1 - prog(t, b - 0.3, b));
+  el.style.opacity = o; el.style.visibility = o > 0 ? "visible" : "hidden";
+  el.style.transform = `translateY(${(1 - prog(t, a, a + 0.35, easeOut)) * 16}px)`;
+}
+
+// ---------- 1. cold open ----------
+anim("#o-t1", 0.25, "chars");
+anim("#o-term", 0.35, "up", { dy: 60 });
+anim("#o-cloud", 1.0, "pop", { from: 0.7 });
+$("#o-cloud").style.left = "1430px"; $("#o-cloud").style.top = "380px";
+anim("#o-cap", 3.5, "chars", { stagger: 0.025 });
+const OPEN_PROMPT = "服务器连不上了，帮我排查一下";
+const KEY_LINES = [
+  "-----BEGIN OPENSSH PRIVATE KEY-----",
+  "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW",
+  "QyNTUxOQAAACBq3Fh8ZtJ0x9vKdR2mB7pLwY4sNcE6uTgHaXiOeV1kUwAAAJgV7cZzFe3G",
+  "cwAAAAtzc2gtZWQyNTUxOQAAACBq3Fh8ZtJ0x9vKdR2mB7pLwY4sNcE6uTgHaXiOeV1kUw",
+];
+for (let i = 0; i < OPEN_PROMPT.length; i++) sfx(0.7 + i / 18, "type");
+sfx(1.65, "enter"); sfx(2.0, "type"); sfx(2.65, "whoosh"); sfx(3.3, "error");
+function frameOpen(t) {
+  const n = Math.floor(clamp((t - 0.7) * 18, 0, OPEN_PROMPT.length));
+  const caret = Math.floor(t * 2.4) % 2 === 0 ? `<span class="caret"></span>` : "";
+  let o = `<span class="t-user">&gt; ${OPEN_PROMPT.slice(0, n)}</span>`;
+  if (t < 1.65) o += caret;
+  else {
+    o += `\n\n<span class="t-ok">●</span> <span class="t-b">Bash</span>(cat ~/.ssh/id_ed25519)\n`;
+    const red = t > 2.65;
+    KEY_LINES.forEach((l, i) => { if (t > 2.0 + i * 0.1) o += `  ${i ? "  " : "<span class='t-dim'>⎿</span> "}<span class="${red ? "t-bad" : ""}">${l}</span>\n`; });
+  }
+  $("#o-pre").innerHTML = o;
+  // key flies out along an arc to the cloud
+  const pk = $("#o-pkt");
+  if (t < 2.6 || t > 3.45) show(pk, false);
+  else {
+    const u = prog(t, 2.6, 3.35);
+    const x = lerp(900, 1560, u), y = lerp(560, 470, u) - Math.sin(Math.PI * u) * 170;
+    show(pk, true, Math.min(1, (3.45 - t) / 0.12)); place(pk, x, y, `scale(${1 + 0.15 * Math.sin(Math.PI * u)})`);
+  }
+  const hit = t > 3.3 ? Math.max(0, 1 - (t - 3.3) / 0.9) : 0;
+  $("#o-cloud-i").style.color = t > 3.3 ? "#ff8a8a" : "#cfe3ff";
+  $("#o-cloud-i").style.textShadow = hit > 0 ? `0 0 ${60 * hit}px rgba(255,90,90,${hit})` : "";
+  $("#o-cloud").style.translate = hit > 0 ? `${Math.sin(t * 90) * 10 * hit}px 0` : "";
+}
+
+// ---------- 2. title ----------
+anim("#t-logo", 5.6, "pop", { from: 0.2, dur: 0.9 });
+anim("#t-glow", 5.6, "fade", { dur: 1.2 });
+anim("#t-name", 6.0, "chars", { stagger: 0.06 });
+anim("#t-tag", 6.6, "chars", { stagger: 0.04 });
+anim("#t-sub", 7.4, "up", { dy: 24 });
+sfx(5.62, "boom"); sfx(6.6, "shimmer");
+function frameTitle(t) {
+  $("#t-glow").style.scale = 1 + 0.06 * Math.sin(t * 2.2);
+}
+
+// ---------- 3. architecture ----------
+anim("#a-title", 9.8, "chars", { stagger: 0.035 });
+anim("#a-zoneA", 10.3, "fade", { dur: 0.6 }); anim("#a-zoneK", 10.9, "fade", { dur: 0.6 });
+[["#a-A", 10.4], ["#a-B", 10.55], ["#a-F", 10.7], ["#a-C", 11.05], ["#a-D", 11.2]].forEach(([s, t]) => { anim(s, t, "pop", { from: 0.7 }); sfx(t, "pop"); });
+const archLines = ["#a-l1", "#a-l2", "#a-l3", "#a-l4"].map(s => { const p = $(s), L = p.getTotalLength(); p.style.strokeDasharray = L; return { p, L }; });
+[12.0, 12.7].forEach(t => sfx(t, "blip")); sfx(13.25, "chime"); sfx(13.85, "click"); sfx(13.95, "success");
+[14.0, 15.0, 15.7].forEach(t => sfx(t, "blip")); sfx(16.25, "success"); sfx(17.1, "blip"); sfx(17.65, "error");
+function frameArch(t) {
+  archLines.forEach(({ p, L }, i) => { p.style.strokeDashoffset = L * (1 - prog(t, 11.2 + i * 0.1, 11.8 + i * 0.1)); });
+  if (t < 12.6) packet($("#a-p1"), t, 12.0, 12.5, [450, 560], [610, 560]);
+  else packet($("#a-p1"), t, 12.75, 13.2, [910, 560], [1070, 560]);
+  packet($("#a-p2"), t, 14.0, 14.55, [1520, 560], [1370, 560]);
+  if (t < 15.6) packet($("#a-p3"), t, 15.0, 15.5, [1070, 560], [910, 560]);
+  else packet($("#a-p3"), t, 15.75, 16.2, [610, 560], [450, 560]);
+  packet($("#a-p4"), t, 17.1, 17.6, [300, 640], [300, 715]);
+  // node pulses
+  const pulse = (sel, a, color) => { const u = t > a && t < a + 0.7 ? Math.sin(Math.PI * (t - a) / 0.7) : 0; $(sel).style.boxShadow = u ? `0 0 ${70 * u}px ${color}, 0 20px 50px rgba(0,0,0,.4)` : ""; };
+  pulse("#a-B", 12.45, "rgba(124,196,255,.8)");
+  pulse("#a-C", 14.5, "rgba(255,180,84,.9)");
+  pulse("#a-A", 16.2, "rgba(74,222,128,.8)");
+  pulse("#a-F", 17.6, "rgba(255,107,107,.9)");
+  $("#a-F-t").style.color = t > 17.6 ? "var(--bad)" : "";
+  $("#a-F-t").textContent = t > 17.6 ? "✕ 没有这个文件" : "没有私钥文件";
+  // approval bubble above bwssh
+  const bub = $("#a-bub");
+  const bo = Math.min(prog(t, 13.2, 13.45, easeOut), 1 - prog(t, 14.6, 14.9));
+  show(bub, t > 13.2 && t < 14.9, bo); place(bub, 1220, 350, `scale(${0.85 + 0.15 * bo})`);
+  $("#a-bub-btn").textContent = t > 13.9 ? "✓ 已批准" : "批准";
+  $("#a-bub-btn").style.transform = t > 13.8 && t < 13.95 ? "scale(.92)" : "";
+  const ok = $("#a-okA"), oo = Math.min(prog(t, 16.2, 16.45, easeOut), 1 - prog(t, 17.0, 17.3));
+  show(ok, t > 16.2 && t < 17.3, oo); place(ok, 300, 395, `scale(${0.85 + 0.15 * oo})`);
+  swap($("#a-cap1"), t, 12.0, 13.2); swap($("#a-cap2"), t, 13.2, 14.2); swap($("#a-cap3"), t, 14.2, 16.9); swap($("#a-cap4"), t, 16.9, 21.2);
+}
+
+// ---------- 4. point 1 ----------
+anim("#p1-num", 21.2, "left"); anim("#p1-h", 21.4, "chars", { stagger: 0.04 });
+anim("#p1-b1", 23.0, "left"); anim("#p1-b2", 23.3, "left"); anim("#p1-b3", 23.6, "left");
+anim("#p1-card", 21.5, "right");
+const CTX = [
+  ["> 把最新版本部署到生产服务器", "t-user"],
+  ["● Bash(ssh deploy@prod-server ./deploy.sh)", ""],
+  ["  ⎿ 已由 bwssh 完成签名 · 部署成功", "t-dim"],
+  ["● Bash(git push origin main)", ""],
+  ["  ⎿ 已由 bwssh 完成签名 · main -> main", "t-dim"],
+  ["● 部署完成，服务运行正常。", "t-ok"],
+];
+CTX.forEach((_, i) => sfx(22.0 + i * 0.28, "tick")); sfx(24.3, "scan"); sfx(25.55, "success");
+[23.0, 23.3, 23.6].forEach(t => sfx(t, "pop"));
+function frameP1(t) {
+  $("#p1-pre").innerHTML = CTX.filter((_, i) => t > 22.0 + i * 0.28).map(([l, c]) => `<span class="${c}">${l.replace(/>/g, "&gt;")}</span>`).join("\n");
+  const sc = $("#p1-scan"), u = prog(t, 24.3, 25.5, u => u);
+  show(sc, t > 24.3 && t < 25.6, Math.min(1, (25.6 - t) / 0.15)); sc.style.top = `${lerp(-90, 600, u)}px`;
+  const b = $("#p1-badge"), bo = prog(t, 25.55, 26.0, easeOut);
+  show(b, t > 25.55, bo); place(b, 1390, 760, `scale(${lerp(0.7, 1, back(clamp((t - 25.55) / 0.6)))})`);
+}
+
+// ---------- 5a. two gates ----------
+anim("#p2-tag", 27.8, "up", { dy: 24 }); anim("#p2-h", 28.0, "chars", { stagger: 0.035 });
+anim("#p2-g1", 28.5, "pop", { from: 0.3 }); anim("#p2-l1", 28.6, "up", { dy: 24 });
+anim("#p2-g2", 28.8, "pop", { from: 0.3 }); anim("#p2-l2", 28.9, "up", { dy: 24 });
+anim("#p2-srv", 29.1, "pop", { from: 0.6 });
+$("#p2-srv").style.left = "1560px"; $("#p2-srv").style.top = "480px";
+[28.5, 28.8, 29.1].forEach(t => sfx(t, "pop"));
+sfx(29.5, "blip"); sfx(30.8, "success"); sfx(31.0, "blip"); sfx(31.75, "chime"); sfx(32.45, "click"); sfx(32.6, "success"); sfx(32.8, "blip"); sfx(33.5, "success");
+function frameP2(t) {
+  // command card: start → gate 1 → gate 2 → server
+  let x = 330;
+  if (t > 29.5) x = lerp(330, 800, prog(t, 29.5, 30.2));
+  if (t > 31.0) x = lerp(800, 1220, prog(t, 31.0, 31.7));
+  if (t > 32.8) x = lerp(1220, 1560, prog(t, 32.8, 33.5));
+  const cmd = $("#p2-cmd"), co = Math.min(prog(t, 29.2, 29.5), 1 - prog(t, 33.35, 33.55));
+  show(cmd, t > 29.2 && t < 33.55, co); place(cmd, x, 600, `scale(${1 - 0.3 * prog(t, 33.2, 33.55)})`);
+  const gate = (sel, lblSel, scanA, okT) => {
+    const g = $(sel), ok = t > okT, scanning = t > scanA && !ok;
+    const pulse = scanning ? 0.6 + 0.4 * Math.sin((t - scanA) * 18) : ok ? 1 : 0.5;
+    const col = ok ? "74,222,128" : scanning ? "124,196,255" : "255,255,255";
+    g.style.background = `rgba(${col},${ok ? 0.95 : scanning ? 0.9 : 0.25})`;
+    g.style.boxShadow = `0 0 ${50 * pulse}px rgba(${col},${0.8 * pulse})`;
+    $(lblSel).style.color = ok ? "var(--ok)" : "";
+  };
+  gate("#p2-g1", "#p2-l1b", 30.1, 30.8);
+  gate("#p2-g2", "#p2-l2b", 31.6, 32.6);
+  $("#p2-l1b").textContent = t > 30.8 ? "✓ Agent 自带审查" : "Agent 自带审查";
+  $("#p2-l2b").textContent = t > 32.6 ? "✓ bwssh 审批" : "bwssh 审批";
+  const to = $("#p2-toast"), tu = Math.min(prog(t, 31.7, 32.0, easeOut), 1 - prog(t, 32.8, 33.1));
+  show(to, t > 31.7 && t < 33.1, tu); place(to, 1220, 860, `translateY(${(1 - tu) * 30}px)`);
+  $("#p2-approve").style.transform = t > 32.45 && t < 32.6 ? "scale(.9)" : "";
+  $("#p2-srv-ok").style.opacity = prog(t, 33.5, 33.8);
+}
+
+// ---------- 5b. hub ----------
+const HUB = [960, 620];
+const CHIPS = [
+  ["&#xE99A;", "Claude Code", 400, 420], ["&#xE756;", "其他 CLI Agent", 330, 620], ["&#xE943;", "IDE 内置 Agent", 400, 820],
+  ["&#xE8D7;", "git push / commit -S", 1520, 420], ["&#xE968;", "ssh · scp · sftp", 1590, 620], ["&#xE9D9;", "你的自动化脚本", 1520, 820],
+];
+const hubSvg = $("#h-svg");
+const hubLines = CHIPS.map(([, , x, y], i) => {
+  const d = `M${x} ${y} C ${(x + HUB[0]) / 2} ${y}, ${(x + HUB[0]) / 2} ${HUB[1]}, ${HUB[0]} ${HUB[1]}`;
+  hubSvg.insertAdjacentHTML("beforeend", `<path d="${d}" fill="none" stroke="rgba(124,196,255,.35)" stroke-width="3"/><circle r="7" fill="#7cc4ff"/>`);
+  const p = hubSvg.querySelectorAll("path")[i], L = p.getTotalLength();
+  p.style.strokeDasharray = L;
+  return { p, L, dot: hubSvg.querySelectorAll("circle")[i] };
+});
+CHIPS.forEach(([ic, name], i) => {
+  const el = document.createElement("div"); el.className = "chip"; el.id = `h-c${i}`;
+  el.innerHTML = `<span class="i">${ic}</span>${name}`; $("#s-hub").append(el);
+});
+anim("#h-tag", 34.8, "up", { dy: 24 }); anim("#h-h", 35.0, "chars", { stagger: 0.03 });
+anim("#h-hub", 35.5, "pop", { from: 0.3, dur: 0.8 }); anim("#h-pipe", 35.8, "up", { dy: 20 }); anim("#h-sub", 37.6, "up", { dy: 20 });
+sfx(35.5, "boom"); CHIPS.forEach((_, i) => sfx(35.9 + i * 0.12, "pop"));
+function frameHub(t) {
+  CHIPS.forEach(([, , x, y], i) => {
+    const el = $(`#h-c${i}`), a = 35.9 + i * 0.12, u = clamp((t - a) / 0.7);
+    show(el, t > a, clamp(u * 4)); place(el, x, y, `scale(${lerp(0.6, 1, back(u))})`);
+    const { p, L, dot } = hubLines[i];
+    p.style.strokeDashoffset = L * (1 - prog(t, a + 0.2, a + 0.9));
+    // signals flowing into the hub
+    const ph = ((t - a - 1.0) * 0.8 + i * 0.37) % 1;
+    const on = t > a + 1.0;
+    dot.style.opacity = on ? Math.sin(Math.PI * ph) : 0;
+    if (on) { const pt = p.getPointAtLength(L * easeIO(ph)); dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); }
+  });
+  $("#h-hub").style.boxShadow = `0 0 ${80 + 30 * Math.sin(t * 3)}px rgba(124,196,255,.4)`;
+}
+
+// ---------- demo cards ----------
+function cardIn(sel, t, a, b, scale) {
+  const el = $(sel), u = clamp((t - a) / 1.0), e = expo(u), out = prog(t, b - 0.5, b);
+  el.style.opacity = Math.min(clamp(u * 3), 1 - out);
+  el.style.transform = `perspective(2400px) translateY(${(1 - e) * 160 - out * 30}px) rotateX(${(1 - e) * 22}deg) scale(${lerp(0.9, 1, e) - out * 0.04})`;
+  el.querySelector("iframe").style.transform = `scale(${scale})`;
+}
+anim("#d1-tag", 40.4, "up", { dy: 20 }); anim("#d1-h", 40.5, "chars", { stagger: 0.03 });
+anim("#d2-tag", 59.4, "up", { dy: 20 }); anim("#d2-h", 59.5, "chars", { stagger: 0.03 });
+
+// ---------- 7. point 3 ----------
+anim("#p3-num", 51.4, "left"); anim("#p3-h", 51.6, "chars", { stagger: 0.04 });
+anim("#p3-b1", 53.0, "left"); anim("#p3-b2", 53.3, "left"); anim("#p3-b3", 53.6, "left");
+anim("#p3-vault", 51.8, "right");
+anim("#p3-t1", 56.4, "pop", { from: 0.7 }); anim("#p3-t2", 56.55, "pop", { from: 0.7 }); anim("#p3-t3", 56.7, "pop", { from: 0.7 });
+const DEVS = [[1150, 780], [1380, 780], [1610, 780]];
+const p3Svg = $("#p3-svg");
+const p3Lines = DEVS.map(([x, y], i) => {
+  const d = `M1380 480 C 1380 590, ${x} 580, ${x} ${y - 90}`;
+  p3Svg.insertAdjacentHTML("beforeend", `<path d="${d}" fill="none" stroke="rgba(74,222,128,.35)" stroke-width="3" stroke-dasharray="8 10"/><circle r="7" fill="#4ade80"/>`);
+  return { p: p3Svg.querySelectorAll("path")[i], dot: p3Svg.querySelectorAll("circle")[i] };
+});
+[53.0, 53.3, 53.6].forEach(t => sfx(t, "pop")); [54.4, 54.55, 54.7].forEach(t => sfx(t, "pop")); [56.4, 56.55, 56.7].forEach(t => sfx(t, "pop"));
+function frameP3(t) {
+  DEVS.forEach(([x, y], i) => {
+    const el = $(`#p3-d${i + 1}`), a = 54.4 + i * 0.15, u = clamp((t - a) / 0.7);
+    show(el, t > a, clamp(u * 4)); place(el, x, y, `scale(${lerp(0.6, 1, back(u))})`);
+    const { p, dot } = p3Lines[i], L = p.getTotalLength();
+    p.style.opacity = prog(t, a, a + 0.5);
+    const ph = ((t - a - 0.4) * 0.9 + i * 0.3) % 1, on = t > a + 0.4;
+    dot.style.opacity = on ? Math.sin(Math.PI * ph) : 0;
+    if (on) { const pt = p.getPointAtLength(L * easeIO(ph)); dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); }
+  });
+  $("#p3-sync").style.transform = `rotate(${t * 180}deg)`;
+}
+
+// ---------- 9. more ----------
+anim("#m-h", 68.3, "chars", { stagger: 0.06 });
+anim("#m-l1", 69.2, "up", { dy: 24 }); anim("#m-l2", 69.4, "up", { dy: 24 });
+const MORE = ["Git 提交签名", "Ed25519 · RSA · ECDSA", "自托管服务器", "空闲 / 锁屏自动锁定", "中英文界面"];
+MORE.forEach((m, i) => {
+  const el = document.createElement("div"); el.className = "chip"; el.style.position = "static"; el.style.fontSize = "24px"; el.style.padding = "12px 24px";
+  el.textContent = m; $("#m-chips").append(el); anim(el, 71.5 + i * 0.15, "pop", { from: 0.6 }); sfx(71.5 + i * 0.15, "pop");
+});
+
+// ---------- 10. outro ----------
+anim("#e-logo", 78.0, "pop", { from: 0.2, dur: 0.9 }); anim("#e-glow", 78.0, "fade", { dur: 1.2 });
+anim("#e-name", 78.35, "chars", { stagger: 0.06 });
+anim("#e-tag", 78.9, "chars", { stagger: 0.035 });
+anim("#e-url", 80.0, "pop", { from: 0.7 }); anim("#e-sub", 80.5, "up", { dy: 20 });
+sfx(77.8, "whoosh"); sfx(78.02, "boom"); sfx(78.9, "shimmer"); sfx(80.0, "pop");
+
+// ---------- stage demo sound effects (clicks, typing, toasts) ----------
+const TYPING = { approve: [[0.5, 16, 16], [6.7, 16, 17]], unlock: [[0.5, 14, 22]], keys: [[3.6, 7, 7]], audit: [[3.7, 9, 6]] };
+const CUES = { approve: [[2.5, "chime"], [2.2, "enter"], [8.4, "enter"]], unlock: [[2.6, "chime"], [2.4, "enter"], [6.8, "success"]], keys: [[7.2, "success"]], audit: [[4.6, "tick"]] };
+function demoSfx(scene, d) {
+  const map = l => (l >= d.l0 && l <= d.l1 ? d.g0 + l - d.l0 : null);
+  const f = document.getElementById(d.id).contentWindow;
+  for (const c of f.CLICKS) { const g = map(c); if (g != null) sfx(g, "click"); }
+  for (const [t0, cps, n] of TYPING[scene]) for (let i = 0; i < n; i++) { const g = map(t0 + i / cps); if (g != null) sfx(g, "type"); }
+  for (const [l, k] of CUES[scene]) { const g = map(l); if (g != null) sfx(g, k); }
+}
+
+// ---------- runtime ----------
+window.DURATION = DURATION;
+window.seek = t => {
+  // background drift
+  const B = [["#b1", 300, 200, 0.11], ["#b2", 1100, 500, 0.08], ["#b3", 700, -200, 0.13]];
+  B.forEach(([s, x, y, w], i) => { $(s).style.transform = `translate(${x + 260 * Math.sin(t * w + i)}px, ${y + 160 * Math.cos(t * w * 1.3 + i * 2)}px)`; });
+  for (const s of SECTIONS) {
+    const on = t >= s.t0 && t < s.t1 + (s.last ? 1 : 0);
+    s.el.style.display = on ? "" : "none";
+    if (!on) continue;
+    const o = s.last ? 0 : prog(t, s.t1 - 0.45, s.t1);
+    s.el.style.opacity = 1 - o;
+    s.el.style.filter = o > 0 ? `blur(${o * 10}px)` : "";
+    s.el.style.transform = o > 0 ? `scale(${1 + o * 0.04})` : "";
+  }
+  applyAnims(t);
+  if (t < 5.4) frameOpen(t);
+  else if (t < 9.6) frameTitle(t);
+  else if (t < 21.0) frameArch(t);
+  else if (t < 27.6) frameP1(t);
+  else if (t < 34.6) frameP2(t);
+  else if (t < 40.2) frameHub(t);
+  else if (t < 51.2) cardIn("#d1-card", t, 40.3, 51.2, 1.35);
+  else if (t < 59.2) frameP3(t);
+  else if (t < 68.2) cardIn("#d2-card", t, 59.3, 68.2, 1.35);
+  else if (t < 77.8) { cardIn("#m-c1", t, 68.3, 77.8, 0.9375); cardIn("#m-c2", t, 68.5, 77.8, 0.9375); }
+  else $("#e-glow").style.scale = 1 + 0.06 * Math.sin(t * 2.2);
+  for (const d of DEMOS) {
+    const f = document.getElementById(d.id).contentWindow;
+    if (f.seek && t > d.g0 - 1.5 && t < d.g0 + (d.l1 - d.l0) + 1) f.seek(clamp(d.l0 + t - d.g0, d.l0, d.l1 + 0.5));
+  }
+  $("#black").style.opacity = Math.max(1 - prog(t, 0, 0.5), prog(t, DURATION - 0.8, DURATION));
+};
+
+window.READY = (async () => {
+  await document.fonts.ready;
+  await Promise.all([...document.querySelectorAll("iframe")].map(f => new Promise(res => {
+    const ok = () => f.contentWindow.READY.then(res);
+    if (f.contentWindow && f.contentWindow.READY && f.contentDocument.readyState === "complete") ok(); else f.addEventListener("load", ok, { once: true });
+  })));
+  const names = { "f-approve": "approve", "f-keys": "keys", "f-unlock": "unlock", "f-audit": "audit" };
+  DEMOS.forEach(d => demoSfx(names[d.id], d));
+  AUDIO.sort((a, b) => a.t - b.t);
+  window.AUDIO = AUDIO;
+})();
+
+if (!new URLSearchParams(location.search).has("render")) {
+  window.READY.then(() => {
+    const start = performance.now();
+    const tick = () => { window.seek(((performance.now() - start) / 1000) % DURATION); requestAnimationFrame(tick); };
+    tick();
+  });
+}
+</script>
+</body>
+</html>

@@ -616,6 +616,7 @@ $("#clock-time").textContent = SCENE === "unlock" ? "09:41" : "10:24";
 const ripples = sc.clicks.map(() => { const r = document.createElement("div"); r.className = "ripple"; world.append(r); return r; });
 
 window.DURATION = sc.duration;
+window.CLICKS = sc.clicks;
 window.seek = t => {
   sc.frame(t);
   cam = { s: BASE, tx: 0, ty: 0 };
@@ -632,7 +633,7 @@ window.seek = t => {
   });
   cam = c;
   world.style.transform = `translate(${c.tx}px, ${c.ty}px) scale(${c.s})`;
-  const cap = sc.captions.find(([a, b]) => t >= a && t < b);
+  const cap = !params.has("nocap") && sc.captions.find(([a, b]) => t >= a && t < b);
   if (cap) {
     const [a, b, n, text] = cap;
     const o = Math.min(prog(t, a, a + 0.3), 1 - prog(t, b - 0.3, b));
