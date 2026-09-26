@@ -1,0 +1,656 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>bwssh demo stage</title>
+<!--
+  Animated README demos. Open in a browser to preview (?scene=approve|unlock|keys|audit&lang=zh|en),
+  or run render.py to export GIFs. Every frame is a pure function of time, so renders are deterministic.
+-->
+<style>
+  :root {
+    --accent: #005fb8;
+    --text: #1a1a1a;
+    --text2: #5d5d5d;
+    --card: rgba(255, 255, 255, 0.72);
+    --stroke: rgba(0, 0, 0, 0.0578);
+    --green: #0f7b0f;
+    --red: #c42b1c;
+    --ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    --icons: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+    --mono: Consolas, "Microsoft YaHei UI", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #000; overflow: hidden; }
+  body { font: 14px/20px var(--ui); color: var(--text); -webkit-font-smoothing: antialiased; }
+  .i { font-family: var(--icons); font-style: normal; font-weight: normal; line-height: 1; display: inline-block; }
+
+  #viewport { position: relative; width: 960px; height: 600px; overflow: hidden; }
+  #world { position: absolute; left: 0; top: 0; width: 1200px; height: 750px; transform-origin: 0 0; overflow: hidden; }
+
+  /* ---------- desktop ---------- */
+  #wall {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 70% at 72% 58%, #9fd0ff 0%, rgba(159, 208, 255, 0) 60%),
+      radial-gradient(ellipse 50% 60% at 30% 35%, #c7b8ff 0%, rgba(199, 184, 255, 0) 65%),
+      radial-gradient(ellipse 70% 50% at 50% 100%, #7fb3f5 0%, rgba(127, 179, 245, 0) 70%),
+      linear-gradient(160deg, #dfe9fb 0%, #cfdcf5 45%, #b9ccf0 100%);
+  }
+  #taskbar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 48px;
+    background: rgba(238, 242, 250, 0.88); border-top: 1px solid rgba(0, 0, 0, 0.08);
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+  .tb-btn { width: 40px; height: 40px; border-radius: 4px; display: grid; place-items: center; position: relative; }
+  .tb-btn.active { background: rgba(255, 255, 255, 0.7); }
+  .tb-btn.active::after { content: ""; position: absolute; bottom: 2px; width: 16px; height: 3px; border-radius: 2px; background: var(--accent); }
+  .tb-btn img { width: 24px; height: 24px; }
+  .win-logo { width: 22px; height: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+  .win-logo i { background: linear-gradient(135deg, #3ab0ff, #0067c0); border-radius: 1px; }
+  .term-logo { width: 24px; height: 22px; border-radius: 4px; background: #2b2b2b; color: #fff; font: bold 11px/22px var(--mono); text-align: center; }
+  .code-logo { width: 22px; height: 22px; border-radius: 5px; background: linear-gradient(135deg, #7ec8ff, #3a8ee6); }
+  #tray { position: absolute; right: 12px; top: 0; height: 48px; display: flex; align-items: center; gap: 10px; font-size: 12px; line-height: 16px; }
+  #tray .clock { text-align: right; }
+  #tray img { width: 16px; height: 16px; }
+  #tray .i { font-size: 16px; }
+
+  /* ---------- windows ---------- */
+  .window { position: absolute; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 32px 64px rgba(0, 0, 0, 0.28), 0 2px 21px rgba(0, 0, 0, 0.22); }
+  .caption-btns { display: flex; height: 100%; }
+  .caption-btns span { width: 46px; display: grid; place-items: center; font-size: 10px; }
+
+  /* terminal */
+  .term { background: #0c0c0c; color: #cccccc; }
+  .term .tabs { height: 40px; background: #202020; display: flex; align-items: flex-end; padding-left: 8px; }
+  .term .tab { height: 32px; width: 240px; background: #0c0c0c; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: #fff; font-size: 12px; }
+  .term .tab .i { font-size: 12px; }
+  .term .tabs .plus { color: #bbb; margin: 0 0 8px 10px; font-size: 12px; }
+  .term .tabs .caption-btns { margin-left: auto; height: 40px; color: #ddd; align-self: flex-start; }
+  .term pre { font: 16px/23px var(--mono); padding: 12px 16px; white-space: pre-wrap; }
+  .t-dim { color: #8a8a8a; } .t-ok { color: #6bd17a; } .t-cyan { color: #61d6d6; } .t-yel { color: #e5c07b; }
+  .t-user { color: #fff; } .t-acc { color: #d7875f; } .t-blue { color: #6cb6ff; } .t-bold { color: #fff; font-weight: bold; }
+  .caret { display: inline-block; width: 9px; height: 18px; background: #ccc; vertical-align: -3px; }
+
+  /* bwssh main window */
+  .app { background: #eef0f5; }
+  .app .titlebar { height: 32px; display: flex; align-items: center; font-size: 12px; padding-left: 16px; gap: 12px; }
+  .app .titlebar img { width: 16px; height: 16px; }
+  .app .titlebar .caption-btns { margin-left: auto; }
+  .app .body { position: absolute; top: 32px; left: 0; right: 0; bottom: 0; display: flex; }
+  .nav { width: 200px; padding: 4px 4px; display: flex; flex-direction: column; }
+  .nav .burger { height: 36px; width: 40px; display: grid; place-items: center; margin: 0 0 4px 0; font-size: 16px; }
+  .nav .item { position: relative; height: 36px; margin: 2px 0; border-radius: 4px; display: flex; align-items: center; gap: 14px; padding-left: 12px; }
+  .nav .item .i { font-size: 16px; width: 16px; }
+  .nav .item.sel, .nav .item.hover { background: rgba(0, 0, 0, 0.055); }
+  .nav .item.sel::before { content: ""; position: absolute; left: 0; top: 10px; width: 3px; height: 16px; border-radius: 2px; background: var(--accent); }
+  .nav .spacer { flex: 1; }
+  .content { flex: 1; position: relative; background: rgba(249, 249, 249, 0.62); border-top-left-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.06); border-right: 0; border-bottom: 0; overflow: hidden; }
+  .page { position: absolute; inset: 0; padding: 24px 32px 32px; display: flex; flex-direction: column; gap: 16px; }
+  .ptitle { font-size: 28px; line-height: 36px; font-weight: 600; font-family: "Segoe UI Variable Display", var(--ui); }
+  .card { background: var(--card); border: 1px solid var(--stroke); border-radius: 8px; padding: 16px; }
+  .strong { font-weight: 600; }
+  .sec { color: var(--text2); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1; min-width: 0; }
+  .btn { height: 32px; padding: 0 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.78); border: 1px solid rgba(0, 0, 0, 0.0578); border-bottom-color: rgba(0, 0, 0, 0.16); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+  .btn .i { font-size: 14px; }
+  .btn.accent { background: var(--accent); color: #fff; border-color: rgba(255, 255, 255, 0.08); border-bottom-color: rgba(0, 0, 0, 0.4); }
+  .btn.hover { background: rgba(249, 249, 249, 0.6); }
+  .btn.accent.hover { background: #1a6fc0; }
+  .btn.press { transform: scale(0.97); }
+  .keycard { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin-bottom: 8px; }
+  .keycard > .i { font-size: 20px; }
+  .keycard .name { font-weight: 600; }
+  .keycard .fp { font: 14px/20px var(--mono); color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .infobar { border-radius: 4px; border: 1px solid var(--stroke); display: flex; gap: 12px; align-items: flex-start; padding: 13px 14px; overflow: hidden; }
+  .infobar.ok { background: #dff6dd; }
+  .infobar .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center; font-size: 9px; margin-top: 2px; flex: none; }
+  .infobar .close { margin-left: auto; font-size: 10px; margin-top: 5px; }
+  .field { height: 32px; border-radius: 4px; background: rgba(255, 255, 255, 0.8); border: 1px solid rgba(0, 0, 0, 0.0578); border-bottom: 1px solid rgba(0, 0, 0, 0.45); display: flex; align-items: center; padding: 0 11px; gap: 8px; }
+  .field.focus { background: #fff; border-bottom: 2px solid var(--accent); }
+  .field .ph { color: #8a8a8a; }
+  .field .tcaret { display: inline-block; width: 1px; height: 16px; background: #000; margin-left: 1px; vertical-align: -3px; }
+  .hdr { margin-bottom: 8px; }
+
+  /* audit */
+  .entry { display: flex; gap: 12px; padding: 8px 12px; border-radius: 4px; }
+  .entry > .i { font-size: 16px; margin-top: 3px; }
+  .entry .proc { font-family: var(--ui); }
+
+  /* dialog */
+  .smoke { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.3); }
+  .dialog { position: absolute; left: 50%; top: 50%; width: 540px; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 32px 64px rgba(0, 0, 0, 0.19); overflow: hidden; }
+  .dialog .top { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .dialog .dtitle { font-size: 20px; line-height: 28px; font-weight: 600; margin-bottom: 4px; }
+  .dialog .foot { background: #f3f3f3; border-top: 1px solid rgba(0, 0, 0, 0.06); padding: 24px; display: flex; gap: 8px; }
+  .dialog .foot .btn { flex: 1; }
+  .selbar { display: flex; gap: 4px; }
+  .selbar span { position: relative; padding: 6px 12px 10px; }
+  .selbar span.on { font-weight: 600; }
+  .selbar span.on::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 16px; margin-left: -8px; height: 3px; border-radius: 2px; background: var(--accent); }
+  .ring { width: 24px; height: 24px; border-radius: 50%; border: 3px solid rgba(0, 95, 184, 0.15); border-top-color: var(--accent); }
+
+  /* toast */
+  .toast {
+    position: absolute; right: 12px; bottom: 60px; width: 364px; border-radius: 8px;
+    background: rgba(248, 249, 252, 0.97); border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.14), 0 0 2px rgba(0, 0, 0, 0.2); padding: 14px 16px 16px;
+  }
+  .toast .head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #444; margin-bottom: 12px; }
+  .toast .head img { width: 16px; height: 16px; }
+  .toast .head .x { margin-left: auto; display: flex; gap: 18px; font-size: 11px; }
+  .toast .ttl { font-weight: 600; margin-bottom: 2px; }
+  .toast .ln { color: #444; }
+  .toast .btns { display: flex; gap: 8px; margin-top: 14px; }
+  .toast .btns .btn { flex: 1; padding: 0 6px; font-size: 13px; }
+  .btn.success { background: var(--green); color: #fff; border-color: transparent; }
+  .btn.critical { background: var(--red); color: #fff; border-color: transparent; }
+  .btn.success.hover { background: #1f8a1f; } .btn.critical.hover { background: #d13a2a; }
+
+  /* windows hello */
+  .hello { position: absolute; left: 50%; top: 50%; width: 456px; margin-left: -228px; margin-top: -175px; background: #f7f7f7; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 32px 64px rgba(0, 0, 0, 0.3); overflow: hidden; }
+  .hello .in { padding: 20px 24px 24px; }
+  .hello .brand { font-size: 12px; color: #444; margin-bottom: 16px; }
+  .hello .h { font-size: 20px; line-height: 28px; font-weight: 600; }
+  .hello .face { width: 120px; height: 120px; margin: 22px auto 14px; position: relative; display: grid; place-items: center; }
+  .hello .face svg { position: absolute; inset: 0; }
+  .hello .msg { text-align: center; color: #333; min-height: 20px; }
+  .hello .foot { background: #eaeaea; padding: 20px 24px; display: flex; justify-content: flex-end; }
+  .hello .foot .btn { width: 200px; }
+
+  /* cursor + effects */
+  #cursor { position: absolute; left: 0; top: 0; width: 26px; height: 26px; transform-origin: 2px 2px; z-index: 50; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+  .ripple { position: absolute; border-radius: 50%; border: 3px solid rgba(0, 120, 255, 0.9); background: rgba(0, 120, 255, 0.18); z-index: 49; pointer-events: none; }
+  .glow { box-shadow: 0 0 0 3px rgba(0, 95, 184, 0.55), 0 0 24px rgba(0, 95, 184, 0.35) !important; }
+
+  /* captions (outside the camera) */
+  #cap {
+    position: absolute; left: 50%; top: 18px; transform: translateX(-50%); z-index: 100;
+    background: rgba(17, 20, 28, 0.82); color: #fff; border-radius: 999px; padding: 9px 20px 9px 12px;
+    font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+  #cap b { background: #3b8cff; border-radius: 50%; width: 24px; height: 24px; display: grid; place-items: center; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="world">
+    <div id="wall"></div>
+    <div id="scene"></div>
+    <div id="taskbar">
+      <div class="tb-btn"><div class="win-logo"><i></i><i></i><i></i><i></i></div></div>
+      <div class="tb-btn"><span class="i" style="font-size:18px">&#xE721;</span></div>
+      <div class="tb-btn" id="tb-term"><div class="term-logo">&gt;_</div></div>
+      <div class="tb-btn"><div class="code-logo"></div></div>
+      <div class="tb-btn" id="tb-app"><img src="../../src/BwSshAgent.App/Assets/app.png" alt=""></div>
+      <div id="tray">
+        <span class="i" style="font-size:12px">&#xE70E;</span>
+        <img id="tray-icon" src="../../src/BwSshAgent.App/Assets/app.png" alt="">
+        <span class="i">&#xE701;</span><span class="i">&#xE767;</span><span class="i">&#xE83F;</span>
+        <div class="clock"><div id="clock-time">10:24</div><div>2026/9/26</div></div>
+      </div>
+    </div>
+    <svg id="cursor" viewBox="0 0 26 26"><path d="M2 2 L2 21 L7 16.5 L10.5 24 L14 22.5 L10.6 15.2 L17.2 15.2 Z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </div>
+  <div id="cap"><b>1</b><span></span></div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const LANG = params.get("lang") || "zh";
+const SCENE = params.get("scene") || "approve";
+const L = (zh, en) => (LANG === "zh" ? zh : en);
+const ICON = "../../src/BwSshAgent.App/Assets/app.png";
+const ICON_LOCKED = "../../src/BwSshAgent.App/Assets/app-locked.ico";
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const ease = u => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+const easeOut = u => 1 - Math.pow(1 - u, 3);
+/** Eased progress of t through [a, b]. */
+const prog = (t, a, b, f = ease) => f(clamp((t - a) / (b - a)));
+const $ = (sel, root = document) => root.querySelector(sel);
+const world = $("#world");
+
+// ---------- geometry: element centers in world coordinates, independent of the camera ----------
+let cam = { s: 0.8, tx: 0, ty: 0 };
+function center(target, dx = 0, dy = 0) {
+  if (Array.isArray(target)) return [target[0] + dx, target[1] + dy];
+  const el = typeof target === "string" ? $(target) : target;
+  const r = el.getBoundingClientRect();
+  return [(r.left + r.width / 2 - cam.tx) / cam.s + dx, (r.top + r.height / 2 - cam.ty) / cam.s + dy];
+}
+
+// ---------- cursor ----------
+// keys: [time, target, dx?, dy?]; the cursor glides between consecutive keys along a slight arc.
+function cursorAt(keys, t) {
+  if (t <= keys[0][0]) return center(keys[0][1], keys[0][2], keys[0][3]);
+  for (let i = 0; i < keys.length - 1; i++) {
+    const [t0, a, ax, ay] = keys[i], [t1, b, bx, by] = keys[i + 1];
+    if (t <= t1) {
+      const p = center(a, ax, ay), q = center(b, bx, by);
+      const u = prog(t, t0, t1);
+      const arc = Math.sin(Math.PI * u) * 0.12;
+      return [lerp(p[0], q[0], u) - (q[1] - p[1]) * arc, lerp(p[1], q[1], u) + (q[0] - p[0]) * arc];
+    }
+  }
+  const k = keys[keys.length - 1];
+  return center(k[1], k[2], k[3]);
+}
+
+// ---------- camera ----------
+// keys: [time, zoom, focus] where focus is a point, selector or "cursor". Zoom 1 shows the whole desktop.
+const BASE = 0.8, VW = 960, VH = 600;
+const easeCam = u => (u < 0.5 ? 8 * u ** 4 : 1 - (-2 * u + 2) ** 4 / 2); // ease-in-out quart
+
+/**
+ * Cursor as seen through a critically damped spring, so a following camera lags and settles with inertia.
+ * Simulated from a fixed window before t: older history has decayed away, so each frame stays a pure function of t.
+ */
+function springCursor(sc, t) {
+  const w = 6.5, dt = 1 / 120, t0 = Math.max(0, t - 1.8), steps = Math.round((t - t0) / dt);
+  const p = cursorAt(sc.cursor, t0), v = [0, 0];
+  for (let i = 1; i <= steps; i++) {
+    const g = cursorAt(sc.cursor, t0 + i * dt);
+    for (let k = 0; k < 2; k++) {
+      v[k] += (w * w * (g[k] - p[k]) - 2 * w * v[k]) * dt;
+      p[k] += v[k] * dt;
+    }
+  }
+  return p;
+}
+
+/** A camera key resolved at time t, with its focus pulled inside the desktop so the frame never shows past the edge. */
+function camKey(sc, [, z, focus], t) {
+  const f = focus === "cursor" ? springCursor(sc, t) : center(focus);
+  const hw = VW / 2 / (BASE * z), hh = VH / 2 / (BASE * z);
+  return { z, f: [clamp(f[0], hw, 1200 - hw), clamp(f[1], hh, 750 - hh)] };
+}
+
+function cameraAt(sc, t) {
+  const keys = sc.camera;
+  let i = keys.findIndex(k => k[0] > t);
+  if (i === -1) i = keys.length - 1;
+  const a = camKey(sc, keys[Math.max(0, i - 1)], t), b = camKey(sc, keys[i], t);
+  const u = i === 0 ? 1 : easeCam(clamp((t - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0])));
+  // Zoom interpolates geometrically so 1x→2x feels as even as 2x→4x.
+  const z = Math.exp(lerp(Math.log(a.z), Math.log(b.z), u));
+  const f = [lerp(a.f[0], b.f[0], u), lerp(a.f[1], b.f[1], u)];
+  const s = BASE * z;
+  return { s, tx: clamp(VW / 2 - f[0] * s, VW - 1200 * s, 0), ty: clamp(VH / 2 - f[1] * s, VH - 750 * s, 0) };
+}
+
+// ---------- shared UI builders ----------
+function h(html) { const d = document.createElement("div"); d.innerHTML = html.trim(); return d.firstElementChild; }
+const titleBtns = `<div class="caption-btns"><span class="i">&#xE921;</span><span class="i">&#xE922;</span><span class="i">&#xE8BB;</span></div>`;
+
+function terminal(x, y, w, hgt, title) {
+  return h(`<div class="window term" id="term" style="left:${x}px;top:${y}px;width:${w}px;height:${hgt}px">
+    <div class="tabs"><div class="tab"><span class="i">&#xE756;</span>${title}<span class="i" style="margin-left:auto;font-size:9px">&#xE8BB;</span></div>
+      <span class="i plus">&#xE710;</span><span class="i plus" style="font-size:10px">&#xE70D;</span>${titleBtns}</div>
+    <pre id="tout"></pre></div>`);
+}
+
+function toast({ title, lines, buttons }) {
+  return h(`<div class="toast" id="toast">
+    <div class="head"><img src="${ICON}">bwssh<div class="x"><span class="i">&#xE712;</span><span class="i">&#xE8BB;</span></div></div>
+    <div class="ttl">${title}</div>${lines.map(l => `<div class="ln">${l}</div>`).join("")}
+    <div class="btns">${buttons.map(([id, text, cls]) => `<div class="btn ${cls || ""}" id="${id}">${text}</div>`).join("")}</div></div>`);
+}
+
+const KEYS = [
+  { name: "GitHub", fp: "ssh-ed25519  SHA256:q3Fh8ZtJ0x9vKdR2mB7pLwY4sNcE6uTgHaXiOeV1kUo" },
+  { name: L("生产服务器", "Production"), fp: "ssh-ed25519  SHA256:Vd2L9aQx7Rk1mZ3cWfP8yTn0sJhB4uEoKgD6iXrN5tA" },
+];
+const NEW_KEY = { name: L("家里的 NAS", "Home NAS"), fp: "ssh-ed25519  SHA256:7kTzW2pYcR9aLm4XvQ8dNfH1sJgE3uBoKiC6yZrD0tM" };
+const CHAIN_AGENT = "claude.exe → bash.exe → git.exe → ssh.exe";
+const GH_HOST = "SHA256:+DiY3wvvV6TuJJhbpZi…";
+
+function keyCard(k, id = "") {
+  return `<div class="card keycard" ${id ? `id="${id}"` : ""}><span class="i">&#xE192;</span>
+    <div class="grow"><div class="name">${k.name}</div><div class="fp">${k.fp}</div></div>
+    <div class="btn copy">${L("复制公钥", "Copy public key")}</div><div class="btn"><span class="i">&#xE712;</span></div></div>`;
+}
+
+function appWindow(x, y) {
+  const navItem = (id, glyph, text) => `<div class="item" id="${id}"><span class="i">${glyph}</span>${text}</div>`;
+  return h(`<div class="window app" id="app" style="left:${x}px;top:${y}px;width:980px;height:660px">
+    <div class="titlebar"><img src="${ICON}">bwssh${titleBtns}</div>
+    <div class="body">
+      <div class="nav">
+        <div class="burger i">&#xE700;</div>
+        ${navItem("nav-keys", "&#xE8D7;", L("SSH 密钥", "SSH keys"))}
+        ${navItem("nav-audit", "&#xE81C;", L("审计日志", "Audit log"))}
+        ${navItem("nav-diag", "&#xE9D9;", L("诊断", "Diagnostics"))}
+        <div class="spacer"></div>
+        ${navItem("nav-settings", "&#xE713;", L("设置", "Settings"))}
+      </div>
+      <div class="content" id="content">
+        <div class="page" id="page-keys">
+          <div class="ptitle">${L("SSH 密钥", "SSH keys")}</div>
+          <div id="added-wrap" style="overflow:hidden;height:0;margin-bottom:-16px"><div class="infobar ok" id="added">
+            <div class="dot i">&#xE73E;</div>
+            <div><span class="strong">${L(`已添加“${NEW_KEY.name}”`, `Added "${NEW_KEY.name}"`)}</span>&nbsp;&nbsp;${L("公钥已复制到剪贴板，可以直接粘贴到服务器的 authorized_keys 或 GitHub 等平台。", "The public key is on the clipboard. Paste it into authorized_keys on your server or into GitHub.")}</div>
+            <span class="i close">&#xE8BB;</span></div></div>
+          <div class="card row" style="align-items:flex-start">
+            <div class="grow"><div class="strong" style="margin-bottom:4px">alice@example.com · bitwarden.com</div>
+              <div class="sec">${L("SSH agent 正在监听 \\\\.\\pipe\\openssh-ssh-agent", "SSH agent is listening on \\\\.\\pipe\\openssh-ssh-agent")}</div>
+              <div class="sec">${L("上次同步：2026-09-26 10:21:37", "Last sync: 2026-09-26 10:21:37")}</div>
+              <div class="sec">${L("批准方式：每次都询问", "Approval: Always ask")}</div></div>
+            <div class="btn"><span class="i">&#xE895;</span>${L("同步", "Sync")}</div>
+            <div class="btn"><span class="i">&#xE72E;</span>${L("锁定", "Lock")}</div>
+          </div>
+          <div>
+            <div class="row" style="margin-bottom:8px"><div class="strong grow">${L("临时授权中的程序", "Programs currently allowed")}</div><div class="btn">${L("全部撤销", "Revoke all")}</div></div>
+            <div>${L("claude.exe（PID 18244） · 密钥 GitHub · 剩余约 14 分钟", "claude.exe (PID 18244) · key GitHub · about 14 min left")}</div>
+          </div>
+          <div class="row"><div class="strong grow" id="keys-count">${L("密钥（2）", "Keys (2)")}</div>
+            <div class="btn accent" id="add-btn"><span class="i">&#xE710;</span>${L("添加密钥", "Add key")}</div></div>
+          <div id="keylist">${KEYS.map(k => keyCard(k)).join("")}<div id="newkey-wrap" style="overflow:hidden;height:0">${keyCard(NEW_KEY, "newkey")}</div></div>
+        </div>
+        <div class="page" id="page-audit" style="opacity:0"></div>
+      </div>
+    </div></div>`);
+}
+
+// ---------- scenes ----------
+const scenes = {};
+
+/** Agent runs git push → toast with process chain → allow for 15 minutes → next push goes through silently. */
+scenes.approve = () => {
+  const s = $("#scene");
+  s.append(terminal(70, 88, 820, 540, "claude — webapp"));
+  s.append(toast({
+    title: L("SSH 登录请求 · GitHub", "SSH login request · GitHub"),
+    lines: [L("发起程序：", "Requested by: ") + CHAIN_AGENT, L(`目标 git@github.com · 主机 ${GH_HOST} · PID 18244`, `to git@github.com · host ${GH_HOST} · PID 18244`)],
+    buttons: [["b-ok", L("批准", "Approve"), "success"], ["b-grant", L("15 分钟内放行", "Allow 15 min")], ["b-deny", L("拒绝", "Deny"), "critical"]],
+  }));
+  $("#tb-term").classList.add("active");
+  const P1 = L("把刚才的提交推送到 GitHub", "Push my last commit to GitHub");
+  const P2 = L("顺便把 v1.2.0 标签也推上去", "Also push the v1.2.0 tag");
+  const spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+  return {
+    duration: 13.5,
+    cursor: [[0, [620, 560]], [2.6, [620, 560]], [4.1, "#b-grant", 6, 4], [4.6, "#b-grant", 6, 4], [6.2, [700, 520]], [13.5, [700, 520]]],
+    clicks: [4.55],
+    camera: [[0, 1, [600, 375]], [2.8, 1, [600, 375]], [3.9, 1.75, "#toast"], [5.0, 1.75, "#toast"], [6.1, 1, [600, 375]], [13.5, 1, [600, 375]]],
+    captions: [
+      [0.2, 2.7, 1, L("Agent 要执行 git push", "Your agent runs git push")],
+      [2.9, 4.4, 2, L("右下角弹出审批，完整程序链一目了然", "A native toast shows the full process chain")],
+      [4.4, 6.6, 3, L("一键放行这个 Agent 15 分钟", "Allow this agent for 15 minutes")],
+      [8.4, 13.5, 4, L("期间同一个 Agent 不再打扰", "Later pushes from it go straight through")],
+    ],
+    frame(t) {
+      const typed = (str, t0, cps = 16) => str.slice(0, Math.floor(clamp((t - t0) * cps, 0, str.length)));
+      const caretOn = Math.floor(t * 2.2) % 2 === 0;
+      const sp = spin[Math.floor(t * 12) % spin.length];
+      let o = `<span class="t-dim">PS C:\\src\\webapp&gt;</span> claude\n\n`;
+      o += `<span class="t-acc">✻</span> <span class="t-bold">Claude Code</span> <span class="t-dim">· ~/src/webapp</span>\n\n`;
+      const p1 = typed(P1, 0.5);
+      o += `<span class="t-user">&gt; ${p1}</span>`;
+      if (t < 2.2) o += caretOn ? `<span class="caret"></span>` : "";
+      else {
+        o += `\n\n<span class="t-ok">●</span> <span class="t-bold">Bash</span>(git push origin main)\n`;
+        if (t < 5.3) o += `  <span class="t-dim">⎿</span> <span class="t-yel">${sp} ${L("等待 SSH 签名批准…", "Waiting for SSH signature approval…")}</span>`;
+        else {
+          o += `  <span class="t-dim">⎿</span> To github.com:alice/webapp.git\n       3f2a1c9..8b7e4d0  main -&gt; main\n`;
+          if (t > 5.8) o += `\n<span class="t-ok">●</span> ${L("已推送到 origin/main。", "Pushed to origin/main.")}\n\n`;
+          if (t > 6.6) {
+            o += `<span class="t-user">&gt; ${typed(P2, 6.7)}</span>`;
+            if (t < 8.4) o += caretOn ? `<span class="caret"></span>` : "";
+            else {
+              o += `\n\n<span class="t-ok">●</span> <span class="t-bold">Bash</span>(git push origin v1.2.0)\n`;
+              if (t < 8.9) o += `  <span class="t-dim">⎿</span> <span class="t-yel">${sp} ${L("正在推送…", "Pushing…")}</span>`;
+              else {
+                o += `  <span class="t-dim">⎿</span> To github.com:alice/webapp.git\n     * [new tag]         v1.2.0 -&gt; v1.2.0\n`;
+                if (t > 9.4) o += `\n<span class="t-ok">●</span> ${L("标签 v1.2.0 已推送，没有再弹出审批。", "Tag v1.2.0 pushed — no prompt this time.")}`;
+              }
+            }
+          }
+        }
+      }
+      $("#tout").innerHTML = o;
+      const tin = prog(t, 2.5, 2.95, easeOut), tout = prog(t, 4.75, 5.1);
+      const toastEl = $("#toast");
+      toastEl.style.transform = `translateX(${(1 - tin) * 390 + tout * 60}px)`;
+      toastEl.style.opacity = t < 2.5 || t > 5.1 ? 0 : 1 - tout;
+      $("#b-grant").classList.toggle("hover", t > 4.0 && t < 4.8);
+      $("#b-grant").classList.toggle("press", t > 4.5 && t < 4.65);
+    },
+  };
+};
+
+/** Vault locked → toast offers Windows Hello → unlock approves the pending ssh login. */
+scenes.unlock = () => {
+  const s = $("#scene");
+  s.append(terminal(70, 88, 820, 500, "PowerShell"));
+  s.append(toast({
+    title: L(`需要解锁 · SSH 登录 · ${KEYS[1].name}`, `Unlock needed · SSH login · ${KEYS[1].name}`),
+    lines: [L("发起程序：", "Requested by: ") + "WindowsTerminal.exe → pwsh.exe → ssh.exe", L("使用 Windows Hello 解锁后将批准此次请求。", "Unlocking with Windows Hello approves this request.")],
+    buttons: [["b-hello", L("Windows Hello 解锁并批准", "Hello unlock and approve"), "success"], ["b-deny", L("拒绝", "Deny"), "critical"]],
+  }));
+  s.append(h(`<div class="hello" id="hello"><div class="in">
+      <div class="brand">${L("Windows 安全中心", "Windows Security")}</div>
+      <div class="h">${L("确保是你本人", "Making sure it's you")}</div>
+      <div class="face"><svg viewBox="0 0 120 120" id="face-svg"></svg></div>
+      <div class="msg" id="hello-msg"></div></div>
+      <div class="foot"><div class="btn">${L("取消", "Cancel")}</div></div></div>`));
+  $("#tb-term").classList.add("active");
+  const CMD = "ssh deploy@prod-server";
+  return {
+    duration: 12,
+    cursor: [[0, [640, 580]], [2.9, [640, 580]], [4.2, "#b-hello", 0, 4], [4.7, "#b-hello", 0, 4], [6.2, [600, 470]], [12, [600, 470]]],
+    clicks: [4.65],
+    camera: [[0, 1, [600, 375]], [2.7, 1, [600, 375]], [3.8, 1.7, "#toast"], [4.9, 1.7, "#toast"], [5.8, 1.45, "#hello"], [7.6, 1.45, "#hello"], [8.6, 1, [600, 375]], [12, 1, [600, 375]]],
+    captions: [
+      [0.2, 2.8, 1, L("密码库已锁定，收到 SSH 请求", "The vault is locked when ssh asks for a key")],
+      [2.9, 4.8, 2, L("直接在通知里用 Windows Hello 解锁", "Unlock with Windows Hello right from the toast")],
+      [4.9, 7.7, 3, L("刷脸 / 指纹 / PIN 验证身份", "Face, fingerprint or PIN")],
+      [7.8, 12, 4, L("解锁即批准，连接继续", "Unlocked and approved — the login continues")],
+    ],
+    frame(t) {
+      const n = Math.floor(clamp((t - 0.5) * 14, 0, CMD.length));
+      const caretOn = Math.floor(t * 2.2) % 2 === 0;
+      let o = `PowerShell 7.5.3\n\n<span class="t-dim">PS C:\\Users\\alice&gt;</span> <span class="t-yel">${CMD.slice(0, 3)}</span>${CMD.slice(3, n)}`;
+      if (t < 2.4) o += caretOn ? `<span class="caret"></span>` : "";
+      else if (t < 8.0) o += `\n`;
+      else {
+        o += `\nWelcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.8.0-45-generic x86_64)\n\n`;
+        if (t > 8.25) o += `  System load:  0.08               Memory usage: 23%\n  Usage of /:   41.2% of 78.62GB   Processes:    142\n\n`;
+        if (t > 8.5) o += `Last login: Fri Sep 25 22:14:03 2026 from 10.0.8.23\n<span class="t-ok">deploy@prod-server</span>:<span class="t-blue">~</span>$ ${caretOn ? `<span class="caret"></span>` : ""}`;
+      }
+      $("#tout").innerHTML = o;
+      $("#tray-icon").src = t < 7.6 ? ICON_LOCKED : ICON;
+      const tin = prog(t, 2.6, 3.05, easeOut), tout = prog(t, 4.85, 5.2);
+      const toastEl = $("#toast");
+      toastEl.style.transform = `translateX(${(1 - tin) * 390 + tout * 60}px)`;
+      toastEl.style.opacity = t < 2.6 || t > 5.2 ? 0 : 1 - tout;
+      $("#b-hello").classList.toggle("hover", t > 4.1 && t < 4.9);
+      $("#b-hello").classList.toggle("press", t > 4.6 && t < 4.75);
+      // Windows Hello: scanning ring, then a check mark.
+      const hin = prog(t, 5.1, 5.4, easeOut), hout = prog(t, 7.5, 7.8);
+      const hello = $("#hello");
+      hello.style.opacity = t < 5.1 || t > 7.8 ? 0 : hin * (1 - hout);
+      hello.style.transform = `scale(${0.96 + 0.04 * hin})`;
+      const ok = t > 6.8;
+      const a = t * 5;
+      const scan = `<circle cx="60" cy="60" r="54" fill="none" stroke="#d6e6f7" stroke-width="4"/>` +
+        (ok ? `<circle cx="60" cy="60" r="54" fill="none" stroke="#0f7b0f" stroke-width="4"/>`
+            : `<circle cx="60" cy="60" r="54" fill="none" stroke="#0067c0" stroke-width="4" stroke-linecap="round" stroke-dasharray="80 260" transform="rotate(${a * 57.3} 60 60)"/>`);
+      const face = ok
+        ? `<path d="M38 62 l14 14 l30 -32" fill="none" stroke="#0f7b0f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" transform="scale(${0.7 + 0.3 * prog(t, 6.8, 7.0, easeOut)})" transform-origin="60 60"/>`
+        : `<circle cx="60" cy="60" r="30" fill="none" stroke="#333" stroke-width="3"/><circle cx="49" cy="54" r="3" fill="#333"/><circle cx="71" cy="54" r="3" fill="#333"/><path d="M47 68 q13 11 26 0" fill="none" stroke="#333" stroke-width="3" stroke-linecap="round"/>`;
+      $("#face-svg").innerHTML = scan + face;
+      $("#hello-msg").textContent = ok ? L("你好，Alice！", "Hello, Alice!") : L("正在查找你…", "Looking for you…");
+    },
+  };
+};
+
+/** Add a new key from the main window: generate → saved to the vault → public key on the clipboard. */
+scenes.keys = () => {
+  $("#scene").append(appWindow(110, 20));
+  $("#tb-app").classList.add("active");
+  $("#nav-keys").classList.add("sel");
+  $("#content").append(h(`<div class="smoke" id="smoke"></div>`));
+  $("#content").append(h(`<div class="dialog" id="dialog"><div class="top">
+      <div class="dtitle">${L("添加 SSH 密钥", "Add SSH key")}</div>
+      <div class="selbar"><span class="on">${L("生成新密钥", "Generate new key")}</span><span>${L("导入已有私钥", "Import existing key")}</span></div>
+      <div><div class="hdr">${L("名称", "Name")}</div><div class="field" id="namebox"><span id="nametext"></span></div></div>
+      <div><div class="hdr">${L("密钥类型", "Key type")}</div><div class="field"><span class="grow">${L("Ed25519（推荐）", "Ed25519 (recommended)")}</span><span class="i" style="font-size:12px">&#xE70D;</span></div></div>
+      <div class="sec">${L("保存后公钥会自动复制到剪贴板，把它加到服务器的 ~/.ssh/authorized_keys 或 GitHub 等平台即可。", "The public key is copied to the clipboard after saving. Add it to ~/.ssh/authorized_keys on your server or to GitHub.")}</div>
+      <div class="ring" id="ring"></div>
+    </div><div class="foot"><div class="btn accent" id="save-btn">${L("保存到密码库", "Save to vault")}</div><div class="btn">${L("取消", "Cancel")}</div></div></div>`));
+  const newName = NEW_KEY.name;
+  return {
+    duration: 12.5,
+    cursor: [[0, [700, 640]], [0.4, [700, 640]], [1.7, "#add-btn", 10, 4], [2.0, "#add-btn", 10, 4], [3.1, "#namebox", -120, 2], [3.4, "#namebox", -120, 2], [5.2, "#namebox", -120, 2], [6.0, "#save-btn", 20, 4], [6.3, "#save-btn", 20, 4], [8.8, "#newkey .copy", 8, 4], [9.3, "#newkey .copy", 8, 4], [11.2, [900, 560]], [12.5, [900, 560]]],
+    clicks: [1.95, 3.35, 6.25, 9.25],
+    camera: [[0, 1.12, "#app"], [1.2, 1.12, "#app"], [2.2, 1.25, "cursor"], [2.6, 1.45, "#dialog"], [6.4, 1.45, "#dialog"], [7.6, 1.15, "#app"], [8.4, 1.15, "#app"], [9.5, 1.4, "cursor"], [10.4, 1.4, "cursor"], [11.6, 1.12, "#app"], [12.5, 1.12, "#app"]],
+    captions: [
+      [0.2, 2.2, 1, L("在 bwssh 里直接添加密钥", "Add keys right inside bwssh")],
+      [2.3, 6.3, 2, L("生成 Ed25519 / RSA，或导入已有私钥", "Generate Ed25519 / RSA, or import an existing key")],
+      [6.4, 8.8, 3, L("本地加密后保存到 Bitwarden 密码库", "Encrypted locally, then saved to your Bitwarden vault")],
+      [8.9, 12.5, 4, L("公钥一键复制，贴到 GitHub 即可", "Copy the public key and paste it into GitHub")],
+    ],
+    frame(t) {
+      const dlgIn = prog(t, 2.0, 2.25, easeOut), dlgOut = prog(t, 7.0, 7.2);
+      const shown = t >= 2.0 && t < 7.2;
+      $("#smoke").style.opacity = shown ? dlgIn * (1 - dlgOut) : 0;
+      const dlg = $("#dialog");
+      dlg.style.opacity = shown ? dlgIn * (1 - dlgOut) : 0;
+      dlg.style.transform = `translate(-50%, -50%) scale(${1.05 - 0.05 * dlgIn + 0.03 * dlgOut})`;
+      $("#namebox").classList.toggle("focus", t > 3.35);
+      const n = Array.from(newName);
+      const typed = n.slice(0, Math.floor(clamp((t - 3.6) * 7, 0, n.length))).join("");
+      const caret = t > 3.35 && t < 6.25 && Math.floor(t * 2.2) % 2 === 0;
+      $("#nametext").innerHTML = typed ? typed + (caret ? `<span class="tcaret"></span>` : "")
+        : (caret ? `<span class="tcaret"></span>` : "") + `<span class="ph">${L("例如：GitHub、公司跳板机", "e.g. GitHub, work bastion")}</span>`;
+      const ring = $("#ring");
+      ring.style.visibility = t > 6.3 && t < 7.0 ? "visible" : "hidden";
+      ring.style.transform = `rotate(${t * 540}deg)`;
+      $("#add-btn").classList.toggle("hover", t > 1.6 && t < 2.1);
+      $("#add-btn").classList.toggle("press", t > 1.9 && t < 2.05);
+      $("#save-btn").classList.toggle("hover", t > 5.9 && t < 6.5);
+      $("#save-btn").classList.toggle("press", t > 6.2 && t < 6.35);
+      const added = t > 7.2;
+      $("#keys-count").textContent = L(`密钥（${added ? 3 : 2}）`, `Keys (${added ? 3 : 2})`);
+      const bar = prog(t, 7.2, 7.6, easeOut);
+      $("#added-wrap").style.height = `${bar * $("#added").offsetHeight}px`;
+      $("#added-wrap").style.marginBottom = `${-16 + bar * 16}px`;
+      const nk = $("#newkey-wrap");
+      nk.style.height = `${prog(t, 7.3, 7.7, easeOut) * 74}px`;
+      nk.style.overflow = t > 7.7 ? "visible" : "hidden";
+      $("#newkey").classList.toggle("glow", t > 7.4 && t < 8.6);
+      const copy = $("#newkey .copy");
+      copy.classList.toggle("hover", t > 8.7 && t < 9.5);
+      copy.classList.toggle("press", t > 9.2 && t < 9.35);
+      copy.innerHTML = t > 9.3 && t < 11.5 ? `<span class="i" style="color:var(--green)">&#xE73E;</span>${L("已复制", "Copied")}` : L("复制公钥", "Copy public key");
+    },
+  };
+};
+
+/** Audit log: every signature is recorded; filter by program. */
+scenes.audit = () => {
+  $("#scene").append(appWindow(110, 20));
+  $("#tb-app").classList.add("active");
+  const OK = ["&#xE73E;", "SeaGreen"], NO = ["&#xE711;", "IndianRed"];
+  const rows = [
+    ["09-26 10:26:03", OK, L("自动批准（程序授权期内）", "Auto-approved (process allowed)"), L("SSH 登录", "SSH login"), CHAIN_AGENT, L("密钥 GitHub · 目标 git@github.com · PID 18244", "Key GitHub · to git@github.com · PID 18244")],
+    ["09-26 10:24:51", OK, L("已批准（授权该程序 15 分钟）", "Approved (process allowed for 15 min)"), L("SSH 登录", "SSH login"), CHAIN_AGENT, L("密钥 GitHub · 目标 git@github.com · PID 18244", "Key GitHub · to git@github.com · PID 18244")],
+    ["09-26 10:12:40", OK, L("已批准", "Approved"), L("Git 提交签名", "Git commit signing"), "Code.exe → git.exe → ssh-keygen.exe", L("密钥 GitHub · PID 9920", "Key GitHub · PID 9920")],
+    ["09-26 09:58:17", NO, L("已拒绝", "Denied"), L("SSH 登录", "SSH login"), "node.exe → ssh.exe", L(`密钥 ${KEYS[1].name} · 目标 root@203.0.113.7 · PID 7712`, `Key ${KEYS[1].name} · to root@203.0.113.7 · PID 7712`)],
+    ["09-26 09:41:05", OK, L("已批准", "Approved"), L("SSH 登录", "SSH login"), "WindowsTerminal.exe → pwsh.exe → ssh.exe", L(`密钥 ${KEYS[1].name} · 目标 deploy@prod-server · PID 6120`, `Key ${KEYS[1].name} · to deploy@prod-server · PID 6120`)],
+    ["09-25 23:02:44", NO, L("超时未响应，已拒绝", "Timed out, denied"), L("SSH 登录", "SSH login"), "python.exe → ssh.exe", L("密钥 GitHub · 目标 git@github.com · PID 5480", "Key GitHub · to git@github.com · PID 5480")],
+  ];
+  $("#page-audit").innerHTML = `<div class="ptitle">${L("审计日志", "Audit log")}</div>
+    <div class="row"><div class="field grow" id="filter"><span id="ftext"></span></div>
+      <div class="field" style="width:130px"><span class="grow">${L("最近 7 天", "Last 7 days")}</span><span class="i" style="font-size:12px">&#xE70D;</span></div>
+      <div class="btn"><span class="i">&#xE72C;</span></div><div class="btn"><span class="i">&#xE838;</span></div></div>
+    <div id="entries">${rows.map(([time, [g, c], dec, op, proc, det], i) => `<div class="entry" data-proc="${proc}">
+      <span class="i" style="color:${c}">${g}</span><div class="grow">
+        <div><span class="sec">${time}</span>&nbsp;&nbsp;<span class="strong">${dec}</span>&nbsp;&nbsp;${op}</div>
+        <div class="proc">${proc}</div><div class="sec">${det}</div></div></div>`).join("")}</div>`;
+  const Q = "claude";
+  return {
+    duration: 11,
+    cursor: [[0, [760, 560]], [0.5, [760, 560]], [1.5, "#nav-audit", -40, 0], [1.8, "#nav-audit", -40, 0], [3.0, "#filter", -200, 0], [3.3, "#filter", -200, 0], [6.4, "#filter", -200, 0], [7.5, [900, 380]], [11, [900, 380]]],
+    clicks: [1.75, 3.25],
+    camera: [[0, 1.12, "#app"], [1.2, 1.12, "#app"], [2.6, 1.3, [640, 330]], [3.6, 1.45, [620, 300]], [5.6, 1.45, [620, 300]], [6.8, 1.55, "#entries"], [9.2, 1.55, "#entries"], [10.4, 1.12, "#app"], [11, 1.12, "#app"]],
+    captions: [
+      [0.2, 2.9, 1, L("每一次签名都会写进审计日志", "Every signature lands in the audit log")],
+      [3.0, 6.3, 2, L("按程序、密钥、主机筛选", "Filter by program, key or host")],
+      [6.4, 11, 3, L("谁、在什么时候、用哪把密钥连了哪台主机", "Who used which key, where, and when")],
+    ],
+    frame(t) {
+      const sw = prog(t, 1.8, 2.1);
+      $("#nav-keys").classList.toggle("sel", t < 1.8);
+      $("#nav-audit").classList.toggle("sel", t >= 1.8);
+      $("#nav-audit").classList.toggle("hover", t > 1.4 && t < 1.8);
+      $("#page-keys").style.opacity = 1 - sw;
+      $("#page-audit").style.opacity = sw;
+      $("#page-audit").style.transform = `translateY(${(1 - sw) * 24}px)`;
+      $("#filter").classList.toggle("focus", t > 3.25);
+      const q = Q.slice(0, Math.floor(clamp((t - 3.7) * 9, 0, Q.length)));
+      const caret = t > 3.25 && Math.floor(t * 2.2) % 2 === 0 ? `<span class="tcaret"></span>` : "";
+      $("#ftext").innerHTML = q ? q + caret : caret + `<span class="ph">${L("筛选：程序、密钥、目标主机、结果…", "Filter: program, key, host, result…")}</span>`;
+      const filtered = q.length === Q.length && t > 4.6;
+      const fade = prog(t, 4.6, 4.9);
+      document.querySelectorAll(".entry").forEach(e => {
+        const match = e.dataset.proc.includes("claude");
+        e.style.display = filtered && !match && fade >= 1 ? "none" : "";
+        e.style.opacity = match || !filtered ? 1 : 1 - fade;
+        e.style.background = match && t > 5.0 && t < 9.5 ? `rgba(0, 95, 184, ${0.07 * prog(t, 5.0, 5.4)})` : "";
+      });
+    },
+  };
+};
+
+// ---------- runtime ----------
+const sc = scenes[SCENE]();
+const cursorEl = $("#cursor"), capEl = $("#cap");
+$("#clock-time").textContent = SCENE === "unlock" ? "09:41" : "10:24";
+// Ripples live in world space so they zoom with the camera.
+const ripples = sc.clicks.map(() => { const r = document.createElement("div"); r.className = "ripple"; world.append(r); return r; });
+
+window.DURATION = sc.duration;
+window.seek = t => {
+  sc.frame(t);
+  cam = { s: BASE, tx: 0, ty: 0 };
+  world.style.transform = `translate(0px, 0px) scale(${BASE})`;
+  const c = cameraAt(sc, t);
+  const [x, y] = cursorAt(sc.cursor, t);
+  const press = sc.clicks.some(ct => t > ct - 0.08 && t < ct + 0.1);
+  cursorEl.style.transform = `translate(${x - 2}px, ${y - 2}px) scale(${press ? 0.82 : 1})`;
+  sc.clicks.forEach((ct, i) => {
+    const u = clamp((t - ct) / 0.55), r = ripples[i];
+    r.style.display = t >= ct && u < 1 ? "block" : "none";
+    const [px, py] = cursorAt(sc.cursor, ct), d = 12 + 44 * easeOut(u);
+    Object.assign(r.style, { left: `${px - d / 2}px`, top: `${py - d / 2}px`, width: `${d}px`, height: `${d}px`, opacity: 1 - u });
+  });
+  cam = c;
+  world.style.transform = `translate(${c.tx}px, ${c.ty}px) scale(${c.s})`;
+  const cap = sc.captions.find(([a, b]) => t >= a && t < b);
+  if (cap) {
+    const [a, b, n, text] = cap;
+    const o = Math.min(prog(t, a, a + 0.3), 1 - prog(t, b - 0.3, b));
+    capEl.style.opacity = o;
+    capEl.style.transform = `translateX(-50%) translateY(${(1 - o) * -8}px)`;
+    capEl.querySelector("b").textContent = n;
+    capEl.querySelector("span").textContent = text;
+  } else capEl.style.opacity = 0;
+};
+
+window.READY = document.fonts.ready.then(() => Promise.all([...document.images].map(i => i.decode().catch(() => {}))));
+if (!params.has("render")) {
+  window.READY.then(() => {
+    const start = performance.now();
+    const tick = () => { window.seek(((performance.now() - start) / 1000) % sc.duration); requestAnimationFrame(tick); };
+    tick();
+  });
+}
+</script>
+</body>
+</html>

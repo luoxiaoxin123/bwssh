@@ -6,6 +6,8 @@ bwssh 是一个 Windows 原生（WinUI 3）的 SSH agent。它从 Bitwarden 密�
 
 支持 **Bitwarden 官方账号**（bitwarden.com / bitwarden.eu），也支持**自建服务器**上的账号。
 
+![Claude Code 执行 git push 时，bwssh 在右下角弹出审批通知，显示完整程序链；点“15 分钟内放行”后，同一个 Agent 再次推送不再询问](docs/images/demo-approve.zh.webp)
+
 ## 功能
 
 - **SSH agent**：监听 `\\.\pipe\openssh-ssh-agent`，Windows 自带的 OpenSSH（`ssh`、`scp`、`sftp`、`ssh-add`、`ssh-keygen`）可以直接使用。支持 Ed25519、RSA、ECDSA（P-256/384/521）密钥，也支持 Git 的 SSH 提交签名。
@@ -21,6 +23,20 @@ bwssh 是一个 Windows 原生（WinUI 3）的 SSH agent。它从 Bitwarden 密�
 - **管理密钥**：可以生成新密钥（Ed25519 / RSA），导入已有私钥（OpenSSH、PKCS#8、PEM，支持带密码的私钥），也可以改名或移到回收站。
 - **开机自启**：启动后常驻托盘，占用资源少。
 - **中英文界面**：自动跟随系统语言。
+
+## 演示
+
+### 锁定时直接用 Windows Hello 解锁
+
+![密码库锁定时执行 ssh，通知里点“Windows Hello 解锁并批准”，验证通过后连接继续](docs/images/demo-unlock.zh.webp)
+
+### 生成、导入和管理密钥
+
+![在 bwssh 中添加一把 Ed25519 密钥，保存到密码库后一键复制公钥](docs/images/demo-keys.zh.webp)
+
+### 审计日志
+
+![在审计日志中按程序筛选，查看每次签名的程序链、密钥和目标主机](docs/images/demo-audit.zh.webp)
 
 ## 安装
 
@@ -87,6 +103,8 @@ Agent 执行 `git push`、`ssh` 等命令时，同样会触发审批通知。通
 dotnet test --project tests/BwSshAgent.Core.Tests   # 运行测试
 ./build.ps1 -Version 1.0.0                           # 输出 artifacts/installer/bwssh-setup-1.0.0.exe
 ```
+
+README 里的演示动图由 [docs/demo](docs/demo) 生成：`stage.html` 用 HTML 复刻界面并按时间轴驱动画面，`render.py` 用 Edge 逐帧截图并编码成 60 fps 动态 WebP。修改 `stage.html` 后执行 `python docs/demo/render.py` 即可重新生成（需要 `pip install playwright pillow numpy`）。
 
 在 GitHub 上发布新的 Release 时，[workflow](.github/workflows/release.yml) 会自动运行测试、构建安装包，并把安装包上传到这个 Release。
 

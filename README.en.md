@@ -6,6 +6,8 @@ bwssh is a native Windows (WinUI 3) SSH agent. It reads SSH keys from your Bitwa
 
 It works with **official Bitwarden accounts** (bitwarden.com / bitwarden.eu) and with accounts on **self-hosted servers**.
 
+![Claude Code runs git push; bwssh shows an approval toast with the full process chain; after "Allow 15 min" the next push from the same agent goes through without a prompt](docs/images/demo-approve.en.webp)
+
 ## Features
 
 - **SSH agent**: listens on `\\.\pipe\openssh-ssh-agent`, so the built-in Windows OpenSSH tools (`ssh`, `scp`, `sftp`, `ssh-add`, `ssh-keygen`) work out of the box. Supports Ed25519, RSA, and ECDSA (P-256/384/521) keys, plus Git SSH commit signing.
@@ -21,6 +23,20 @@ It works with **official Bitwarden accounts** (bitwarden.com / bitwarden.eu) and
 - **Key management**: generate new keys (Ed25519 / RSA), import existing private keys (OpenSSH, PKCS#8, PEM, including passphrase-protected ones), and rename keys or move them to the trash.
 - **Start with Windows**: runs quietly in the tray and uses few resources.
 - **English and Chinese UI**: follows the Windows display language.
+
+## See it in action
+
+### Unlock with Windows Hello from the notification
+
+![With the vault locked, ssh triggers a toast; "Hello unlock and approve" verifies you and the login continues](docs/images/demo-unlock.en.webp)
+
+### Generate, import and manage keys
+
+![Adding an Ed25519 key in bwssh, saving it to the vault and copying the public key](docs/images/demo-keys.en.webp)
+
+### Audit log
+
+![Filtering the audit log by program to see the process chain, key and host of each signature](docs/images/demo-audit.en.webp)
 
 ## Install
 
@@ -87,6 +103,8 @@ Requires the .NET 10 SDK. Building the installer also requires [Inno Setup 6](ht
 dotnet test --project tests/BwSshAgent.Core.Tests   # run the tests
 ./build.ps1 -Version 1.0.0                           # writes artifacts/installer/bwssh-setup-1.0.0.exe
 ```
+
+The demo animations in this README come from [docs/demo](docs/demo): `stage.html` recreates the UI in HTML and drives it along a timeline, and `render.py` captures it frame by frame in Edge and encodes them as 60 fps animated WebP. After changing `stage.html`, run `python docs/demo/render.py` to regenerate them (requires `pip install playwright pillow numpy`).
 
 When you publish a new GitHub Release, the [workflow](.github/workflows/release.yml) runs the tests, builds the installer, and attaches it to that release.
 
