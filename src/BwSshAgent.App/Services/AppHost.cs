@@ -81,6 +81,14 @@ public sealed class AppHost
         {
             Log.Error("Auto start refresh failed", ex);
         }
+        try
+        {
+            new OnDemandLaunch().RefreshPath(Environment.ProcessPath!);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Start on demand refresh failed", ex);
+        }
 
         _minuteTimer = new Timer(_ => Dispatcher.TryEnqueue(OnTimer), null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30));
         if (Session.State != VaultState.LoggedOut)

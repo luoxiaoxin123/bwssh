@@ -61,6 +61,19 @@
 
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="8">
+                    <TextBlock Text="{l:T Zh='按需启动', En='Start on demand'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="{l:T Zh='不开机自启、也不提前打开 bwssh：执行 ssh、git push 时如果 bwssh 没有运行，会先在托盘中启动它再继续连接，不需要任何常驻的后台进程。在 cmd、PowerShell 和 Git Bash 中都有效。', En='No autostart and no need to open bwssh first: when ssh or git push runs and bwssh is not running, it is started in the tray before the connection continues, with no resident background process. Works in cmd, PowerShell and Git Bash.'}" />
+                    <TextBlock x:Name="OnDemandStatus" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="OnDemandEnableButton" Style="{StaticResource AccentButtonStyle}" Content="{l:T Zh='一键设置', En='Set up'}" Click="OnEnableOnDemand" />
+                        <Button x:Name="OnDemandDisableButton" Content="{l:T Zh='撤销', En='Undo'}" Click="OnDisableOnDemand" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
                     <TextBlock Text="{l:T Zh='连接测试', En='Connection test'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Text="{l:T Zh='用系统 OpenSSH 的 ssh-add -L 列出 agent 中的公钥（不会触发签名，也不需要批准）。', En='Lists the public keys in the agent with the Windows OpenSSH ssh-add -L (no signing, no approval needed).'}" />

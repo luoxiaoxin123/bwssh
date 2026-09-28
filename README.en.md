@@ -25,7 +25,7 @@ https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
 - **Quick unlock**: Windows Hello and PIN. When a request arrives while the vault is locked, you can unlock with Windows Hello and approve directly from the notification.
 - **Auto-lock and sync**: lock when idle, when Windows locks, or on sleep, and sync the vault on a schedule.
 - **Key management**: generate new keys (Ed25519 / RSA), import existing private keys (OpenSSH, PKCS#8, PEM, including passphrase-protected ones), and rename keys or move them to the trash.
-- **Start with Windows**: runs quietly in the tray and uses few resources.
+- **Start with Windows, or on demand**: run in the tray from sign-in, or skip autostart and let `ssh` and `git push` start bwssh when they need it (see [Start on demand](#start-on-demand-nothing-resident)).
 - **English and Chinese UI**: follows the Windows display language.
 
 ## See it in action
@@ -74,6 +74,26 @@ When an agent runs `git push`, `ssh`, and similar commands, you get the same app
 - To let an agent run several git operations in a row, choose "Allow 15 min". That agent process can then use the key without asking. A different agent process, a different key, or locking the vault asks again.
 - Allowed programs are listed on the SSH keys page, where you can revoke them at any time. The tray menu also has "Revoke all temporary approvals".
 - Every request is written to the audit log.
+
+## Start on demand (nothing resident)
+
+Don't want bwssh to start with Windows, or to open it by hand first? On the Diagnostics page, under "Start on demand", click "Set up". From then on, when `ssh` or `git push` runs and bwssh isn't running, bwssh starts in the tray and the connection continues. No background process or service stays resident in the meantime.
+
+"Set up" does two things:
+
+- It adds a `Match exec` rule at the top of `~/.ssh/config`. Before every connection, ssh runs `bwssh.exe --ensure-agent`, which returns immediately if bwssh is running. Otherwise it starts bwssh and returns once the agent is ready. The previous file is backed up to `config.bwssh.bak`.
+- It puts `ssh`, `scp`, `sftp`, and `ssh-add` scripts in `~/bin`. By default, Git Bash uses the ssh bundled with Git, which cannot reach Windows named pipes. These scripts make Git Bash use the Windows OpenSSH client instead. Only Git Bash puts `~/bin` on its PATH, so cmd and PowerShell are not affected. Existing files with the same names are left alone.
+
+| Where `ssh` runs | Supported |
+|---|---|
+| cmd, PowerShell | ✅ |
+| Git Bash (including the Claude Code Bash tool) | ✅ |
+| `git push` / `git pull` in any terminal | ✅ (with `core.sshCommand` set as in step 3 of Getting started) |
+
+- **Latency**: about 0.5 s extra when bwssh has to start, and about 0.1–0.2 s per connection when it is already running.
+- **Memory**: the check process lives for about 0.1 s and uses about 9 MB of private memory, all of which is freed when it exits.
+- **Limits**: `ssh-add` and Git SSH commit signing (`git commit -S`) don't read the ssh config, so they don't start bwssh.
+- **Undo**: click "Undo" on the same card. Uninstalling bwssh also cleans this up.
 
 ## Notes
 

@@ -1,6 +1,8 @@
 using BwSshAgent.Core;
 using System.Diagnostics;
+using System.Text;
 using BwSshAgent.App.Services;
+using BwSshAgent.Core.Settings;
 using BwSshAgent.Core.Ssh;
 using BwSshAgent.Core.Storage;
 using Microsoft.UI.Xaml;
@@ -15,6 +17,8 @@ public sealed partial class DiagnosticsPage : Page, IRefreshable
     private static readonly string SystemSsh = Path.Combine(Environment.SystemDirectory, "OpenSSH", "ssh.exe");
     private static readonly string SystemSshAdd = Path.Combine(Environment.SystemDirectory, "OpenSSH", "ssh-add.exe");
 
+    private readonly OnDemandLaunch _onDemand = new();
+    private IReadOnlyList<string> _skippedShims = [];
     private MainWindow? _window;
     private AppHost Host => _window!.Host;
 
@@ -46,6 +50,79 @@ public sealed partial class DiagnosticsPage : Page, IRefreshable
             PipeState.Busy => L.T($"❌ {pipe.PipePath} 已被 {pipe.BusyOwner ?? "其他进程"} 占用。关闭占用者后会在 5 秒内自动接管。", $"❌ {pipe.PipePath} is used by {pipe.BusyOwner ?? "another process"}. bwssh takes over within 5 seconds after it is closed."),
             _ => L.T("⏹ 未运行", "⏹ Not running"),
         } + (string.IsNullOrEmpty(sock) ? "" : L.T($"\n注意：当前环境变量 SSH_AUTH_SOCK = {sock}，ssh 会优先连接它。", $"\nNote: SSH_AUTH_SOCK is set to {sock}; ssh connects to that first."));
+        RefreshOnDemand();
+    }
+
+    private void RefreshOnDemand()
+    {
+        bool configured;
+        IReadOnlyList<string> shims;
+        try
+        {
+            configured = _onDemand.IsConfigured;
+            shims = _onDemand.InstalledShims;
+        }
+        catch (Exception ex)
+        {
+            OnDemandStatus.Text = L.T($"❌ 无法读取 {_onDemand.SshConfigPath}：{ex.Message}", $"❌ Could not read {_onDemand.SshConfigPath}: {ex.Message}");
+            return;
+        }
+        OnDemandEnableButton.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
+        OnDemandDisableButton.Visibility = configured ? Visibility.Visible : Visibility.Collapsed;
+        if (!configured)
+        {
+            OnDemandStatus.Text = L.T(
+                $"未设置。一键设置会在 {_onDemand.SshConfigPath} 开头加入一段 Match exec 规则（原文件备份为 config.bwssh.bak），并在 {_onDemand.BinDir} 中放入 ssh、scp、sftp、ssh-add 脚本，让 Git Bash 改用系统 OpenSSH（Git 自带的 ssh 无法连接本 agent）。",
+                $"Not set up. Setting up adds a Match exec rule at the top of {_onDemand.SshConfigPath} (the old file is backed up to config.bwssh.bak) and puts ssh, scp, sftp and ssh-add scripts in {_onDemand.BinDir} so Git Bash uses the Windows OpenSSH client (Git's bundled ssh cannot reach this agent).");
+            return;
+        }
+        var lines = new List<string>
+        {
+            L.T($"✅ 已设置：{_onDemand.SshConfigPath} 中已加入按需启动规则。", $"✅ Set up: {_onDemand.SshConfigPath} has the start-on-demand rule."),
+        };
+        if (shims.Count > 0)
+        {
+            lines.Add(L.T($"✅ Git Bash 中的 {string.Join("、", shims)} 会使用系统 OpenSSH（{_onDemand.BinDir}）。", $"✅ In Git Bash, {string.Join(", ", shims)} use the Windows OpenSSH client ({_onDemand.BinDir})."));
+        }
+        if (_skippedShims.Count > 0)
+        {
+            lines.Add(L.T($"⚠ {_onDemand.BinDir} 中已有同名文件，没有覆盖：{string.Join("、", _skippedShims)}。", $"⚠ {_onDemand.BinDir} already has files with these names, left untouched: {string.Join(", ", _skippedShims)}."));
+        }
+        lines.Add(L.T("注意：ssh-add 和 Git 的 SSH 提交签名不读取 ssh 配置，不会自动启动 bwssh。", "Note: ssh-add and Git SSH commit signing don't read the ssh config, so they don't start bwssh."));
+        OnDemandStatus.Text = string.Join("\n", lines);
+    }
+
+    private void OnEnableOnDemand(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _skippedShims = _onDemand.Enable(Environment.ProcessPath!);
+            Log.Info("Start on demand set up");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Start on demand setup failed", ex);
+            OnDemandStatus.Text = L.T($"❌ 设置失败：{ex.Message}", $"❌ Setup failed: {ex.Message}");
+            return;
+        }
+        RefreshOnDemand();
+    }
+
+    private void OnDisableOnDemand(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _onDemand.Disable();
+            _skippedShims = [];
+            Log.Info("Start on demand removed");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Start on demand removal failed", ex);
+            OnDemandStatus.Text = L.T($"❌ 撤销失败：{ex.Message}", $"❌ Undo failed: {ex.Message}");
+            return;
+        }
+        RefreshOnDemand();
     }
 
     private async Task CheckAsync()
@@ -145,6 +222,9 @@ public sealed partial class DiagnosticsPage : Page, IRefreshable
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                // OpenSSH and git print UTF-8 (key comments, paths); the default would decode it with the ANSI code page.
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
             if (env != null)
             {

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using BwSshAgent.App.Services;
+using BwSshAgent.Core.Settings;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
@@ -10,10 +11,17 @@ public static class Program
 {
     /// <summary>Held for the process lifetime so the installer can detect a running instance.</summary>
     private static Mutex? _runningMutex;
+    private const string RunningMutexName = "BwSshAgent-AppMutex";
 
     [STAThread]
     private static int Main(string[] args)
     {
+        // Run by ssh before every connection (Match exec in ~/.ssh/config), so it returns before any WinUI setup.
+        if (args.Contains(OnDemandLaunch.EnsureArg, StringComparer.OrdinalIgnoreCase))
+        {
+            return OnDemandLaunch.EnsureAgent(Environment.ProcessPath!, AppSettings.Load().PipeName, RunningMutexName);
+        }
+
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
         if (args.Contains("--uninstall-cleanup", StringComparer.OrdinalIgnoreCase))
@@ -30,7 +38,7 @@ public static class Program
             return 0;
         }
 
-        _runningMutex = new Mutex(false, "BwSshAgent-AppMutex");
+        _runningMutex = new Mutex(false, RunningMutexName);
         mainInstance.Activated += (_, _) => AppHost.Current?.OnRedirectedActivation();
 
         var launchedByToast = AppInstance.GetCurrent().GetActivatedEventArgs().Kind == ExtendedActivationKind.AppNotification;
@@ -47,7 +55,8 @@ public static class Program
     }
 
     /// <summary>
-    /// Called by the uninstaller: removes the toast registration and the autostart entry, and with --purge
+    /// Called by the uninstaller: removes the toast registration, the autostart entry and the on-demand start
+    /// setup (~/.ssh/config block, Git Bash scripts), and with --purge
     /// also deletes local data (cached vault, settings, audit log) and the Windows Hello credential.
     /// </summary>
     private static int UninstallCleanup(bool purge)
@@ -61,7 +70,14 @@ public static class Program
         }
         try
         {
-            BwSshAgent.Core.Settings.AutoStart.Set(false);
+            AutoStart.Set(false);
+        }
+        catch (Exception)
+        {
+        }
+        try
+        {
+            new OnDemandLaunch().Disable();
         }
         catch (Exception)
         {
