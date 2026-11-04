@@ -52,6 +52,35 @@ public struct Account: Codable {
     }
 }
 
+/// A wrapped key and its derivation parameters must always come from the same response object.
+struct MasterPasswordMaterial: Equatable {
+    let encryptedKey: String
+    let kdf: KDF
+    let salt: String
+
+    static func resolve(_ root: Object, fallback: Self?) throws -> Self {
+        let modern = root.object("userDecryption").object("masterPasswordUnlock")
+        let tokenModern = root.object("userDecryptionOptions").object("masterPasswordUnlock")
+        for unlock in [modern, tokenModern] {
+            if let wrapped = unlock.text("masterKeyWrappedUserKey") ?? unlock.text("masterKeyEncryptedUserKey") {
+                guard let salt = unlock.text("salt"), !salt.isEmpty, !unlock.object("kdf").isEmpty else {
+                    throw BwError(tr("服务器的解锁信息不完整，请重新登录。", "The server's unlock information is incomplete. Sign in again."))
+                }
+                return Self(encryptedKey: wrapped, kdf: try unlock.object("kdf").kdf(modern: true), salt: salt)
+            }
+        }
+        guard let fallback else { throw BwError("Missing master-password unlock information") }
+        return Self(encryptedKey: root.object("profile").text("key") ?? root.text("key") ?? fallback.encryptedKey, kdf: fallback.kdf, salt: fallback.salt)
+    }
+    static func cached(_ account: Account) throws -> Self {
+        guard let root = try JSONSerialization.jsonObject(with: account.snapshot) as? Object else { throw BwError("Invalid vault snapshot") }
+        return try resolve(root, fallback: Self(encryptedKey: account.encryptedUserKey, kdf: account.kdf, salt: account.salt))
+    }
+    func apply(to account: inout Account) {
+        account.encryptedUserKey = encryptedKey; account.kdf = kdf; account.salt = salt
+    }
+}
+
 public struct LoginChallenge: Error, LocalizedError {
     public let providers: [Int]
     public let newDevice: Bool
@@ -117,12 +146,18 @@ public final class BitwardenAPI {
         let token = try await request(server.identity + "/connect/token", form: form, authEmail: clientID.isEmpty ? authEmail : nil)
         guard let access = token.text("access_token") else { throw BwError("Missing access token") }
         let sync = try await request(server.api + "/sync?excludeDomains=true", method: "GET", token: access)
-        let profile = sync.object("profile"), unlock = sync.object("userDecryption").object("masterPasswordUnlock")
-        guard let encrypted = token.text("key") ?? profile.text("key") ?? unlock.text("masterKeyEncryptedUserKey") else { throw BwError("Missing encrypted user key") }
-        var userKey = try Crypto.decryptUserKey(encrypted, master: master); defer { userKey.wipe() }
+        let profile = sync.object("profile")
+        let legacy = token.text("key").map { MasterPasswordMaterial(encryptedKey: $0, kdf: kdf, salt: salt) }
+        let tokenMaterial = try? MasterPasswordMaterial.resolve(token, fallback: legacy)
+        let material = try MasterPasswordMaterial.resolve(sync, fallback: tokenMaterial ?? legacy ?? profile.text("key").map { MasterPasswordMaterial(encryptedKey: $0, kdf: kdf, salt: salt) })
+        if material.kdf != kdf || material.salt != salt {
+            master.wipe()
+            master = try await Task.detached { try material.kdf.derive(password: password, salt: material.salt) }.value
+        }
+        var userKey = try Crypto.decryptUserKey(material.encryptedKey, master: master); defer { userKey.wipe() }
         guard userKey.count == 64 || userKey.count == 32 else { throw BwError("Invalid user key") }
-        var account = Account(server: server, email: email, salt: salt, kdf: kdf, accessToken: access, refreshToken: token.text("refresh_token"),
-            expires: Date().addingTimeInterval(Double(token.number("expires_in") ?? 3600)), encryptedUserKey: encrypted,
+        var account = Account(server: server, email: profile.text("email") ?? email, salt: material.salt, kdf: material.kdf, accessToken: access, refreshToken: token.text("refresh_token"),
+            expires: Date().addingTimeInterval(Double(token.number("expires_in") ?? 3600)), encryptedUserKey: material.encryptedKey,
             userID: profile.text("id") ?? "", snapshot: try JSONSerialization.data(withJSONObject: sync), syncedAt: Date())
         if !clientID.isEmpty { account.apiClientID = clientID; account.apiClientSecret = clientSecret }
         return (account, Secret(userKey))
@@ -149,11 +184,10 @@ public final class BitwardenAPI {
     public func sync(_ account: Account) async throws -> Account {
         var account = try await refreshed(account)
         let sync = try await request(account.server.api + "/sync?excludeDomains=true", method: "GET", token: account.accessToken)
+        if let userID = sync.object("profile").text("id"), !account.userID.isEmpty, userID != account.userID { throw BwError("Sync returned a different account") }
+        let material = try MasterPasswordMaterial.resolve(sync, fallback: MasterPasswordMaterial.cached(account))
         account.snapshot = try JSONSerialization.data(withJSONObject: sync); account.syncedAt = Date()
-        let unlock = sync.object("userDecryption").object("masterPasswordUnlock")
-        account.encryptedUserKey = sync.object("profile").text("key") ?? unlock.text("masterKeyEncryptedUserKey") ?? account.encryptedUserKey
-        if !unlock.object("kdf").isEmpty { account.kdf = try unlock.object("kdf").kdf(modern: true) }
-        account.salt = unlock.text("salt") ?? account.salt
+        material.apply(to: &account)
         return account
     }
     func mutate(_ account: Account, method: String, path: String, body: Object?) async throws {

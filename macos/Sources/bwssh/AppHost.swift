@@ -5,7 +5,7 @@ import UserNotifications
 import ServiceManagement
 import BwCore
 
-@MainActor final class AppHost: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate, NSToolbarDelegate, NSToolbarItemValidation, NSSearchFieldDelegate {
+@MainActor final class AppHost: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation, NSSearchFieldDelegate {
     let vault: Vault
     let agent: Agent
     private var server: SocketServer?
@@ -22,7 +22,10 @@ import BwCore
     private var screenObserver: NSObjectProtocol?
     private var lastUnlock = Date()
     private var wasUnlocked = false
-    init(vault: Vault, agent: Agent) { self.vault = vault; self.agent = agent }
+    init(vault: Vault, agent: Agent) {
+        self.vault = vault; self.agent = agent
+        toolbarPage = vault.screen == .login ? "login" : vault.screen == .unlock ? "unlock" : "keys"
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let menu = NSMenu(); let appMenu = NSMenuItem(); let submenu = NSMenu()
@@ -40,6 +43,9 @@ import BwCore
             guard let page = note.object as? String else { return }; self?.configureToolbar(page: page)
         }.store(in: &observations)
         vault.$busy.sink { [weak self] _ in DispatchQueue.main.async { self?.mainToolbar?.validateVisibleItems() } }.store(in: &observations)
+        vault.$unlocked.sink { [weak self] unlocked in
+            if !unlocked { self?.settingsWindow?.orderOut(nil) }
+        }.store(in: &observations)
         let file = NSMenuItem(title: tr("文件", "File"), action: nil, keyEquivalent: "")
         let fileMenu = NSMenu(title: file.title)
         for (title, action, key) in [(tr("添加密钥…", "Add key…"), #selector(addKey), "n"), (tr("同步密码库", "Sync vault"), #selector(syncVault), "r"), (tr("搜索", "Find"), #selector(focusSearch), "f")] {
@@ -178,7 +184,7 @@ import BwCore
         window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     private func identifiers(for page: String) -> [NSToolbarItem.Identifier] {
-        if page == "login" { return [] }
+        if page == "login" || page == "unlock" { return [] }
         let common: [NSToolbarItem.Identifier] = [NSToolbarItem.Identifier("sidebar"), .flexibleSpace]
         if page == "keys" { return common + ["sync", "lock", "add", "search"].map { NSToolbarItem.Identifier($0) } }
         if page == "audit" { return common + ["clear", "search"].map { NSToolbarItem.Identifier($0) } }
@@ -191,6 +197,7 @@ import BwCore
         case "keys": window?.title = tr("SSH 密钥", "SSH keys")
         case "audit": window?.title = tr("审计日志", "Audit log")
         case "diagnostics": window?.title = tr("连接与诊断", "Connections")
+        case "unlock": window?.title = tr("解锁密码库", "Unlock vault")
         default: window?.title = "bwssh"
         }
         guard let mainToolbar else { return }
@@ -235,6 +242,16 @@ import BwCore
         default: return true
         }
     }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(addKey): return vault.unlocked && !vault.busy && toolbarPage == "keys"
+        case #selector(syncVault): return vault.unlocked && !vault.busy
+        case #selector(focusSearch): return vault.unlocked && ["keys", "audit"].contains(toolbarPage)
+        case #selector(showSettings): return vault.unlocked
+        case #selector(lockVault): return vault.unlocked
+        default: return true
+        }
+    }
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSSearchField else { return }
         NotificationCenter.default.post(name: .bwsshSearch, object: field.stringValue)
@@ -244,6 +261,7 @@ import BwCore
     @objc private func clearAudit() { NotificationCenter.default.post(name: .bwsshClearAudit, object: nil) }
     @objc private func focusSearch() { window?.makeKeyAndOrderFront(nil); if let search = searchItem?.searchField { window?.makeFirstResponder(search) } }
     @objc func showSettings() {
+        guard vault.unlocked else { showWindow(); return }
         if settingsWindow == nil {
             let settings = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 680), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             settings.title = tr("bwssh 设置", "bwssh Settings"); settings.minSize = NSSize(width: 560, height: 480)
@@ -272,7 +290,7 @@ import BwCore
     #endif
     @objc private func syncVault() { vault.perform { try await self.vault.sync() } }
     @objc private func revoke() { agent.revokeAll() }
-    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
+    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.2", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
     @objc private func quit() { vault.lock(); server?.stop(); NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) { vault.lock(); server?.stop(); timer?.invalidate() }
 }

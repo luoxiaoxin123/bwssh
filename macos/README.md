@@ -4,6 +4,16 @@
 支持 Apple Silicon (`arm64`) 和 Intel (`x86_64`)；运行时不需要 .NET、Electron、WebView 或 Bitwarden CLI。
 Windows 版本继续使用仓库根目录的解决方案；macOS 版本是独立原生实现。
 
+## 1.0.2 修复
+
+- 首次启动显示登录页；已有账号但密码库锁定时显示独立解锁页，验证成功后才进入主界面。
+  锁定会隐藏密钥列表、审计和设置窗口。SSH agent 的锁定状态仍拒绝签名。
+- 密码输入框支持右侧小眼睛显示 / 隐藏；临时授权时长、审批等待时间、空闲锁定和同步间隔均可直接输入整数，非法值不保存。
+- 登录、设置、连接页使用统一背景，修复深色模式下窄表单与两侧背景的色差。
+- 账户解锁信息以“加密用户密钥 + KDF + 盐值”整体解析，兼容新版 `masterKeyWrappedUserKey` 字段；
+  旧缓存解锁时优先使用快照内的完整参数，成功后保存修复值。不会跳过 MAC 校验。
+  若仍无法解锁，可在解锁页刷新信息或重新登录；不必删除个人密钥。
+
 ## 1.0.1 界面更新
 
 采用 AppKit 标准窗口工具栏和搜索控件，密钥与审计使用紧凑表格，固定详情区避免选中行时窗口跳动。
@@ -90,8 +100,8 @@ git config --global commit.gpgsign true
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.1
-python3 macos/package.py --arch x86_64 --version 1.0.1
+python3 macos/package.py --arch arm64 --version 1.0.2
+python3 macos/package.py --arch x86_64 --version 1.0.2
 ```
 
 仅安装 Command Line Tools、没有 XCTest 的机器可运行同一套核心用例：
@@ -111,6 +121,19 @@ python3 macos/check-local.py
 
 ## 界面开发预览
 
-`python3 macos/preview.py` 生成独立的 Debug 预览 app，使用虚构账号和临时密钥，不启动 agent socket、
+`python3 macos/preview.py --state locked`（也支持 `login` / `unlocked`）生成独立的 Debug 预览 app，使用虚构账号和临时密钥，不启动 agent socket、
 通知或定时同步，也不读取个人密码库。预览菜单可切换浅色、深色和窄窗口。预览入口仅编译到 Debug，
 不会出现在发布包中。
+
+## macOS SSH 配置与按需启动
+
+macOS 自带 OpenSSH 支持 Unix socket。无需改用其他 SSH 程序或关闭系统 ssh-agent，
+在「连接与诊断」设置 `IdentityAgent` 即可让 SSH 连接选用 bwssh。按需启动的「设置」同时写入
+`IdentityAgent` 与 `Match exec`，因此无需重复点一次「配置 SSH」。
+
+`ssh-add` 和 Git 的 SSH 提交签名通过 `SSH_AUTH_SOCK` 选择 agent，仍需按上文设置 shell 环境。
+它们不会读取 SSH 配置，故 `Match exec` 不会为它们启动应用。已建立的 SSH ControlMaster 连接也可能复用现有连接而不再请求签名。
+
+可运行 `python3 macos/check-on-demand.py` 验证真实系统 SSH 读取临时配置、冷启动一个隔离的测试 app、
+等待 socket、重复请求复用进程，再用系统 ssh-add 请求该 socket。测试不读取个人账户、不会修改
+`~/.ssh/config`，也不停止已有 agent；测试入口仅存在于 Debug。CI 在两个架构上都运行该检查。

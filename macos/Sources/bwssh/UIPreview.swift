@@ -6,6 +6,11 @@ import BwCore
 @MainActor func previewVault() async throws -> (Vault, Agent, URL) {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("bwssh-preview-" + UUID().uuidString)
     let store = try LocalStore(root: directory, encryptionKey: Crypto.random(32))
+    let state = ProcessInfo.processInfo.environment["BWSSH_UI_PREVIEW_STATE"] ?? "unlocked"
+    if state == "login" {
+        let vault = try Vault(store: store, settings: Settings(), transient: true)
+        return (vault, try Agent(vault: vault, store: store), directory)
+    }
     let user = try Crypto.random(64), kdf = KDF(iterations: 5000)
     let master = try kdf.derive(password: "preview", salt: "preview@example.com")
     var ciphers: [[String: Any]] = []
@@ -19,6 +24,7 @@ import BwCore
     try store.save(account, name: "account")
     let vault = try Vault(store: store, settings: Settings(), transient: true)
     try await vault.unlock(password: "preview")
+    if state == "locked" { vault.lock() }
     let agent = try Agent(vault: vault, store: store); agent.status = tr("Agent 正在监听", "Agent listening")
     return (vault, agent, directory)
 }

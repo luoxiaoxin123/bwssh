@@ -12,7 +12,7 @@ import subprocess
 root = pathlib.Path(__file__).resolve().parent
 parser = argparse.ArgumentParser()
 parser.add_argument("--arch", choices=["arm64", "x86_64"], default=platform.machine())
-parser.add_argument("--version", default="1.0.1")
+parser.add_argument("--version", default="1.0.2")
 parser.add_argument("--skip-dmg", action="store_true")
 args = parser.parse_args()
 if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.]+)?", args.version):

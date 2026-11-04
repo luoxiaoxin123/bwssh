@@ -70,6 +70,8 @@ enum VaultDecryptor {
 
 private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var attempts: Int }
 
+public enum VaultScreen: Equatable { case login, unlock, main }
+
 @MainActor public final class Vault: ObservableObject {
     @Published public private(set) var account: Account?
     @Published public private(set) var identities: [PublicIdentity] = []
@@ -78,6 +80,7 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
     @Published public var settings: Settings
     @Published public var busy = false
     @Published public var message = ""
+    public var screen: VaultScreen { account == nil ? .login : unlocked ? .main : .unlock }
     public var onLock: (() -> Void)?
     public var onKeysChanged: (() -> Void)?
     public let api: BitwardenAPI
@@ -113,12 +116,15 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
     }
     public func unlock(password: String) async throws {
         guard let account else { throw BwError("Sign in first") }; let generation = epoch
+        let material = try MasterPasswordMaterial.cached(account)
         let key = try await Task.detached {
-            var master = try account.kdf.derive(password: password, salt: account.salt); defer { master.wipe() }
-            var raw = try Crypto.decryptUserKey(account.encryptedUserKey, master: master); defer { raw.wipe() }
+            var master = try material.kdf.derive(password: password, salt: material.salt); defer { master.wipe() }
+            var raw = try Crypto.decryptUserKey(material.encryptedKey, master: master); defer { raw.wipe() }
             return Secret(raw)
         }.value
         try await unlock(key: key, generation: generation, restorePIN: true)
+        var repaired = account; material.apply(to: &repaired)
+        try store.save(repaired, name: "account"); self.account = repaired
     }
     private func unlock(key: Secret, generation: Int, restorePIN: Bool) async throws {
         guard let account else { throw BwError("Sign in first") }
@@ -155,6 +161,16 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         }
         try store.save(updated, name: "account"); self.account = updated
         onLock?() // synchronizing may remove a key or change its access; clear all cached decisions.
+    }
+    public func refreshUnlockInformation() async throws {
+        guard !unlocked, var account else { throw BwError("Lock the vault before refreshing unlock information") }
+        let generation = epoch
+        let (kdf, salt) = try await api.prelogin(server: account.server, email: account.email)
+        account.kdf = kdf; account.salt = salt
+        let updated = try await api.sync(account)
+        guard generation == epoch, !unlocked else { throw CancellationError() }
+        try store.save(updated, name: "account"); self.account = updated
+        message = tr("已刷新解锁信息，请重新输入主密码。", "Unlock information refreshed. Enter your master password again.")
     }
     public func sign(id: String, data: Data, flags: UInt32) throws -> Data {
         guard unlocked, let key = keys[id] else { throw BwError("Vault is locked or key unavailable") }

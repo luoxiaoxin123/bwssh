@@ -39,6 +39,9 @@ struct MainView: View {
         default: return tr("SSH 密钥", "SSH keys")
         }
     }
+    private var page: String {
+        switch vault.screen { case .login: return "login"; case .unlock: return "unlock"; case .main: return selection ?? "keys" }
+    }
     var body: some View {
         GeometryReader { geometry in
           Group {
@@ -47,6 +50,8 @@ struct MainView: View {
                     if !vault.message.isEmpty { InlineMessage(text: vault.message) { vault.message = "" } }
                     LoginView(vault: vault)
                 }.navigationTitle("bwssh")
+            } else if !vault.unlocked {
+                LockedLoginPage(vault: vault)
             } else {
                 NavigationSplitView(columnVisibility: $visibility) {
                     List(selection: $selection) {
@@ -90,9 +95,8 @@ struct MainView: View {
           }.frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(minWidth: 740, minHeight: 480)
-        .onAppear { NotificationCenter.default.post(name: .bwsshPageChanged, object: vault.account == nil ? "login" : selection ?? "keys") }
-        .onChange(of: selection) { _ in NotificationCenter.default.post(name: .bwsshPageChanged, object: selection ?? "keys") }
-        .onChange(of: vault.account == nil) { loggedOut in NotificationCenter.default.post(name: .bwsshPageChanged, object: loggedOut ? "login" : selection ?? "keys") }
+        .onAppear { NotificationCenter.default.post(name: .bwsshPageChanged, object: page) }
+        .onChange(of: page) { page in NotificationCenter.default.post(name: .bwsshPageChanged, object: page) }
         .onReceive(NotificationCenter.default.publisher(for: .bwsshToggleSidebar)) { _ in visibility = visibility == .detailOnly ? .all : .detailOnly }
     }
 }
@@ -111,6 +115,12 @@ struct LoginView: View {
     @State private var otp = ""
     @State private var challenge: LoginChallenge?
     @State private var localMessage = ""
+    init(vault: Vault, email: String = "", server: String = "https://bitwarden.com") {
+        self.vault = vault
+        _email = State(initialValue: email)
+        _server = State(initialValue: ["https://bitwarden.com", "https://bitwarden.eu"].contains(server) ? server : "custom")
+        _custom = State(initialValue: server)
+    }
     var body: some View {
         ScrollView {
             VStack(spacing: 22) {
@@ -126,11 +136,11 @@ struct LoginView: View {
                         }
                         if server == "custom" { TextField(tr("服务器地址", "Server URL"), text: $custom, prompt: Text("https://vault.example.com")) }
                         TextField(tr("邮箱", "Email"), text: $email, prompt: Text("you@example.com"))
-                        SecureField(tr("主密码", "Master password"), text: $password).onSubmit(login)
+                        RevealPasswordField(tr("主密码", "Master password"), text: $password).onSubmit(login)
                     }
                     Section {
                         Toggle(tr("使用 API Key 登录", "Sign in with API key"), isOn: $apiKey)
-                        if apiKey { TextField("Client ID", text: $clientID); SecureField("Client secret", text: $clientSecret) }
+                        if apiKey { TextField("Client ID", text: $clientID); RevealPasswordField("Client secret", text: $clientSecret) }
                     } footer: {
                         if apiKey { Text(tr("主密码仅用于在此 Mac 上解密密码库。", "Your master password decrypts the vault on this Mac.")) }
                     }
@@ -149,7 +159,7 @@ struct LoginView: View {
                             }
                         }
                     }
-                }.formStyle(.grouped).textFieldStyle(.roundedBorder).fixedSize(horizontal: false, vertical: true)
+                }.formStyle(.grouped).scrollContentBackground(.hidden).textFieldStyle(.roundedBorder).fixedSize(horizontal: false, vertical: true)
                 if !localMessage.isEmpty { Text(localMessage).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                 HStack(spacing: 8) {
                     if vault.busy { ProgressView().controlSize(.small) }
@@ -180,12 +190,13 @@ struct LoginView: View {
 struct UnlockView: View {
     @ObservedObject var vault: Vault
     var onUnlocked: () -> Void = {}
+    var standalone = false
     @State private var password = ""
     @State private var pinMode = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(tr("密码库已锁定", "Vault locked"), systemImage: "lock.fill").font(.headline)
-            SecureField(pinMode ? "PIN" : tr("主密码", "Master password"), text: $password).textFieldStyle(.roundedBorder).onSubmit(unlock)
+            if !standalone { Label(tr("密码库已锁定", "Vault locked"), systemImage: "lock.fill").font(.headline) }
+            RevealPasswordField(pinMode ? "PIN" : tr("主密码", "Master password"), text: $password).textFieldStyle(.roundedBorder).onSubmit(unlock)
             HStack {
                 Button(tr("解锁", "Unlock"), action: unlock).buttonStyle(.borderedProminent).disabled(vault.busy || password.isEmpty)
                 if vault.settings.touchIDEnabled {
@@ -193,7 +204,7 @@ struct UnlockView: View {
                 }
                 if vault.settings.pinEnabled { Button(pinMode ? tr("使用主密码", "Use password") : tr("使用 PIN", "Use PIN")) { pinMode.toggle(); password = "" } }
             }
-        }.padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+        }.padding(standalone ? 0 : 16).background(standalone ? Color.clear : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
     }
     private func unlock() {
         vault.perform {
@@ -218,7 +229,6 @@ struct KeysView: View {
     private var selected: PublicIdentity? { vault.identities.first { $0.id == selectedID } }
     var body: some View {
         VStack(spacing: 0) {
-            if !vault.unlocked { UnlockView(vault: vault).padding(20) }
             if vault.identities.isEmpty {
                 EmptyContent(symbol: "key.horizontal", title: tr("尚无 SSH 密钥", "No SSH keys"), detail: tr("添加密钥，或同步 Bitwarden 密码库。", "Add a key or sync your Bitwarden vault.")) {
                     Button(tr("添加密钥…", "Add key…")) { adding = true }.disabled(!vault.unlocked || vault.busy)
@@ -336,7 +346,7 @@ struct AddKeyView: View {
             Picker(tr("类型", "Type"), selection: $kind) { Text("Ed25519").tag("ed25519"); Text("RSA 3072").tag("rsa"); Text(tr("导入私钥", "Import private key")).tag("import") }
             if kind == "import" {
                 TextEditor(text: $pem).font(.system(.caption, design: .monospaced)).frame(height: 180).border(.quaternary)
-                HStack { Button(tr("选择私钥文件…", "Choose private key…"), action: choose); SecureField(tr("私钥密码（可选）", "Passphrase (optional)"), text: $passphrase) }
+                HStack { Button(tr("选择私钥文件…", "Choose private key…"), action: choose); RevealPasswordField(tr("私钥密码（可选）", "Passphrase (optional)"), text: $passphrase) }
             }
             if !vault.message.isEmpty { Text(vault.message).foregroundStyle(.orange).font(.caption) }
             HStack {
@@ -445,7 +455,7 @@ struct DiagnosticsView: View {
             if !result.isEmpty {
                 Section(tr("测试与操作结果", "Results")) { Text(result).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
             }
-        }.formStyle(.grouped).frame(maxWidth: 720).frame(maxWidth: .infinity)
+        }.formStyle(.grouped).scrollContentBackground(.hidden).frame(maxWidth: 720).frame(maxWidth: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
     }
     private func setup(_ onDemand: Bool) {
@@ -486,12 +496,9 @@ struct SettingsView: View {
                     }
                     duration(tr("临时授权时长", "Temporary access"), value: $vault.settings.grantMinutes, range: 1...1440)
                     LabeledContent(tr("等待审批", "Approval timeout")) {
-                        HStack(spacing: 8) {
-                            Text(tr("\(vault.settings.approvalTimeout) 秒", "\(vault.settings.approvalTimeout) seconds")).foregroundStyle(.secondary).monospacedDigit()
-                            Stepper("", value: $vault.settings.approvalTimeout, in: 15...300, step: 15).labelsHidden().fixedSize()
-                                .accessibilityLabel(tr("审批等待时间", "Approval timeout"))
-                        }
+                        NumericSettingField(tr("等待审批", "Approval timeout"), value: $vault.settings.approvalTimeout, range: 15...300, unit: tr("秒", "seconds"))
                     }
+
                 } header: { Text(tr("密钥使用审批", "Key approval")) } footer: {
                     Text(tr("临时授权仅适用于同一个程序会话；锁定密码库会撤销所有授权。", "Temporary access applies to one process session. Locking the vault revokes all access grants.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }
@@ -510,7 +517,7 @@ struct SettingsView: View {
                     }
                     LabeledContent("PIN") {
                         HStack(spacing: 8) {
-                            SecureField("", text: $pin, prompt: Text(tr("至少 4 位", "At least 4 characters"))).labelsHidden().accessibilityLabel(tr("新 PIN", "New PIN")).frame(width: 145).textFieldStyle(.roundedBorder)
+                            RevealPasswordField(tr("至少 4 位", "At least 4 characters"), text: $pin).labelsHidden().accessibilityLabel(tr("新 PIN", "New PIN")).frame(width: 145).textFieldStyle(.roundedBorder)
                             Button(vault.settings.pinEnabled ? tr("更改…", "Change…") : tr("设置…", "Set up…")) { vault.perform { try await vault.setPIN(pin); pin = "" } }
                                 .disabled(!vault.unlocked || pin.count < 4 || vault.busy)
                         }
@@ -537,7 +544,7 @@ struct SettingsView: View {
                         Button(tr("退出账号…", "Sign out…"), role: .destructive) { logout = true }
                     } header: { Text(tr("Bitwarden 账号", "Bitwarden account")) }
                 }
-            }.formStyle(.grouped)
+            }.formStyle(.grouped).scrollContentBackground(.hidden)
         }
         .frame(maxWidth: 680).frame(maxWidth: .infinity).background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: vault.settings) { _ in vault.saveSettings() }
@@ -546,13 +553,9 @@ struct SettingsView: View {
         }
     }
     private func duration(_ label: String, value: Binding<Int>, range: ClosedRange<Int>, step: Int = 1) -> some View {
-        LabeledContent(label) {
-            HStack(spacing: 8) {
-                Text(value.wrappedValue == 0 ? tr("关闭", "Off") : tr("\(value.wrappedValue) 分钟", "\(value.wrappedValue) minutes")).foregroundStyle(.secondary).monospacedDigit()
-                Stepper("", value: value, in: range, step: step).labelsHidden().fixedSize().accessibilityLabel(label)
-            }
-        }
+        LabeledContent(label) { NumericSettingField(label, value: value, range: range, unit: tr("分钟", "minutes")) }
     }
+
 }
 
 struct ApprovalsView: View {

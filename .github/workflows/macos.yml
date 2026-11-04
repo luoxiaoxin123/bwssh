@@ -13,7 +13,7 @@ on:
     inputs:
       version:
         description: Package version
-        default: "1.0.1"
+        default: "1.0.2"
         required: true
         type: string
 
@@ -48,9 +48,11 @@ jobs:
           xcode-select -p
       - name: Test cryptography and real OpenSSH interoperability
         run: swift test --package-path macos
+      - name: Verify SSH on-demand cold and warm launch
+        run: python3 macos/check-on-demand.py
       - name: Build native application, ZIP and DMG
         env:
-          PACKAGE_VERSION: ${{ inputs.version || '1.0.1' }}
+          PACKAGE_VERSION: ${{ inputs.version || '1.0.2' }}
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: python3 macos/package.py --arch "$PACKAGE_ARCH" --version "$PACKAGE_VERSION"
       - name: Upload packages

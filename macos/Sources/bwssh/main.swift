@@ -1,15 +1,32 @@
 import AppKit
 import BwCore
 
+#if DEBUG
+if CommandLine.arguments.contains("--smoke-config"), let path = smokeSocket {
+    print(try SSHConfiguration.configured("Host probe\n  User smoke\n", executable: Bundle.main.executablePath!, socket: path, onDemand: true))
+    exit(0)
+}
+if CommandLine.arguments.contains("--smoke-agent"), let path = smokeSocket {
+    MainActor.assumeIsolated { do { try runSmokeAgent(path: path) } catch { fputs("\(error)\n", stderr); exit(1) } }
+    exit(0)
+}
+#endif
+
 if CommandLine.arguments.contains("--version") {
-    print("bwssh \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1") (native macOS)")
+    print("bwssh \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.2") (native macOS)")
 } else if CommandLine.arguments.contains("--ensure-agent") {
-    if SocketServer.isRunning() { exit(0) }
+    var path = Paths.socket
+    var launchArguments = ["--background"]
+    #if DEBUG
+    if let isolated = smokeSocket { path = isolated; launchArguments = ["--smoke-agent"] }
+    #endif
+    if SocketServer.isRunning(path: path) { exit(0) }
     let bundle = Bundle.main.bundleURL
     guard bundle.pathExtension == "app" else { fputs("Install bwssh.app before using on-demand launch.\n", stderr); exit(1) }
-    let opener = Process(); opener.executableURL = URL(fileURLWithPath: "/usr/bin/open"); opener.arguments = ["-g", bundle.path, "--args", "--background"]
+    let opener = Process(); opener.executableURL = URL(fileURLWithPath: "/usr/bin/open"); opener.arguments = ["-g", bundle.path, "--args"] + launchArguments
     do { try opener.run(); opener.waitUntilExit() } catch { fputs("Cannot start bwssh.\n", stderr); exit(1) }
-    for _ in 0..<200 { if SocketServer.isRunning() { exit(0) }; Thread.sleep(forTimeInterval: 0.05) }
+    guard opener.terminationStatus == 0 else { fputs("LaunchServices could not open bwssh.\n", stderr); exit(1) }
+    for _ in 0..<200 { if SocketServer.isRunning(path: path) { exit(0) }; Thread.sleep(forTimeInterval: 0.05) }
     fputs("bwssh agent did not become ready within 10 seconds.\n", stderr); exit(1)
 } else {
     let app = NSApplication.shared
