@@ -4,6 +4,12 @@
 支持 Apple Silicon (`arm64`) 和 Intel (`x86_64`)；运行时不需要 .NET、Electron、WebView 或 Bitwarden CLI。
 Windows 版本继续使用仓库根目录的解决方案；macOS 版本是独立原生实现。
 
+## 1.0.4 PIN 启动解锁选项
+
+「设置 → 快速解锁」新增「每次启动后先用主密码或 Touch ID 解锁」开关，默认开启。
+开启时重启后需要先完成主密码 / Touch ID 解锁，之后才能使用 PIN；关闭时重启后可直接用已设置的 PIN。
+修改开关需要先解锁密码库；连续 5 次 PIN 错误仍清除 PIN，次数不会因重启而重置。Windows 端不变。
+
 ## 1.0.3 通知审批与解锁
 
 - 移除「刷新解锁信息」按钮；缓存解密失败时自动尝试一次在线刷新并用本次密码重试，成功后保存修复值。正常离线解锁不受影响。
@@ -109,8 +115,8 @@ git config --global commit.gpgsign true
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.3
-python3 macos/package.py --arch x86_64 --version 1.0.3
+python3 macos/package.py --arch arm64 --version 1.0.4
+python3 macos/package.py --arch x86_64 --version 1.0.4
 ```
 
 仅安装 Command Line Tools、没有 XCTest 的机器可运行同一套核心用例：

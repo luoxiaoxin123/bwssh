@@ -155,7 +155,7 @@ public enum VaultScreen: Equatable { case login, unlock, main }
         guard epoch == generation else { throw CancellationError() }
         try store.save(loaded.identities, name: "public-keys"); apply(loaded, key: key)
         if restorePIN, settings.pinEnabled, let saved = try store.load(PinEnvelope.self, name: "pin") {
-            // PIN is intentionally unusable after restart until master password or Touch ID succeeds.
+            // Restore PIN availability for this process when the restart requirement is enabled.
             pinWrappingKey = Secret(try Crypto.random(32))
             var saved = saved; saved.attempts = 0; try store.save(saved, name: "pin")
         }
@@ -208,7 +208,6 @@ public enum VaultScreen: Equatable { case login, unlock, main }
         try await unlock(key: key, generation: generation, restorePIN: true)
     }
     public func setPIN(_ pin: String) async throws {
-        guard !transient else { throw BwError("Unavailable in UI preview") }
         guard let userKey, pin.count >= 4, pin.count <= 128 else { throw BwError(tr("先解锁，PIN 至少 4 位。", "Unlock first. Use a PIN of at least 4 characters.")) }
         let salt = try Crypto.random(16)
         var derived = try await Task.detached { try Crypto.argon(Data(pin.utf8), salt: salt) }.value; defer { derived.wipe() }
@@ -216,11 +215,11 @@ public enum VaultScreen: Equatable { case login, unlock, main }
         var raw = userKey.data(); defer { raw.wipe() }
         let envelope = PinEnvelope(salt: salt, encrypted: try Crypto.encrypt(raw, key: Crypto.stretch(derived)), attempts: 0)
         try store.save(envelope, name: "pin"); pinWrappingKey = Secret(try Crypto.random(32))
-        settings.pinEnabled = true; try settings.save()
+        settings.pinEnabled = true; if !transient { try settings.save() }
     }
     public func unlockPIN(_ pin: String) async throws {
-        guard !transient else { throw BwError("Unavailable in UI preview") }
-        guard pinWrappingKey != nil, settings.pinEnabled else { throw BwError(tr("本次启动后请先用主密码或 Touch ID 解锁一次。", "Use the master password or Touch ID once after starting the app.")) }
+        guard settings.pinEnabled else { throw BwError(tr("尚未设置 PIN。", "PIN is not configured.")) }
+        guard !settings.pinRequiresPrimaryUnlockAfterRestart || pinWrappingKey != nil else { throw BwError(tr("本次启动后请先用主密码或 Touch ID 解锁一次。", "Use the master password or Touch ID once after starting the app.")) }
         guard var envelope = try store.load(PinEnvelope.self, name: "pin") else { throw BwError("PIN is not configured") }
         let generation = epoch
         envelope.attempts += 1; try store.save(envelope, name: "pin")
@@ -232,7 +231,7 @@ public enum VaultScreen: Equatable { case login, unlock, main }
             try await unlock(key: key, generation: generation, restorePIN: false)
             envelope.attempts = 0; try store.save(envelope, name: "pin")
         } catch {
-            if envelope.attempts >= 5 { try store.delete("pin"); settings.pinEnabled = false; pinWrappingKey = nil; try settings.save() }
+            if envelope.attempts >= 5 { try store.delete("pin"); settings.pinEnabled = false; pinWrappingKey = nil; if !transient { try settings.save() } }
             throw error
         }
     }

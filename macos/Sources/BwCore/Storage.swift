@@ -99,6 +99,12 @@ public struct Settings: Codable, Equatable {
     public var lockOnScreenLock = true
     public var syncMinutes = 30
     public var pinEnabled = false
+    // Optional backing storage keeps existing settings files compatible; missing means enabled.
+    private var pinRequirePrimaryAfterRestart: Bool?
+    public var pinRequiresPrimaryUnlockAfterRestart: Bool {
+        get { pinRequirePrimaryAfterRestart ?? true }
+        set { pinRequirePrimaryAfterRestart = newValue }
+    }
     public var touchIDEnabled = false
     public init() {}
     public static func load() -> Settings {

@@ -522,11 +522,18 @@ struct SettingsView: View {
                                 .disabled(!vault.unlocked || pin.count < 4 || vault.busy)
                         }
                     }
+                    Toggle(tr("每次启动后先用主密码或 Touch ID 解锁", "Require master password or Touch ID after each launch"), isOn: $vault.settings.pinRequiresPrimaryUnlockAfterRestart)
+                        .disabled(!vault.unlocked || vault.busy)
                     if vault.settings.touchIDEnabled || vault.settings.pinEnabled {
                         Button(tr("关闭快速解锁…", "Disable quick unlock…")) { do { try vault.disableQuickUnlock() } catch { vault.message = error.localizedDescription } }
                     }
                 } header: { Text(tr("快速解锁", "Quick unlock")) } footer: {
-                    Text(tr("更改设置前请先解锁密码库。每次启动后先用主密码或 Touch ID 解锁一次，之后可用 PIN；连续输错 5 次会清除 PIN。", "Unlock the vault before setup. After each launch, unlock once with the master password or Touch ID before using PIN. Five failed attempts clear the PIN.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    Text(tr(vault.settings.pinRequiresPrimaryUnlockAfterRestart
+                        ? "开启时，每次启动后先用主密码或 Touch ID 解锁，之后可用 PIN。连续输错 5 次会清除 PIN。"
+                        : "关闭时，重启 bwssh 后可直接使用 PIN 解锁。连续输错 5 次会清除 PIN。",
+                        vault.settings.pinRequiresPrimaryUnlockAfterRestart
+                        ? "When enabled, unlock once with the master password or Touch ID after each launch before using PIN. Five failed attempts clear the PIN."
+                        : "When disabled, PIN can unlock bwssh immediately after restarting. Five failed attempts clear the PIN.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }
                 Section {
                     Toggle(tr("登录 macOS 时打开 bwssh", "Open bwssh at login"), isOn: $loginItem).onChange(of: loginItem) { enabled in

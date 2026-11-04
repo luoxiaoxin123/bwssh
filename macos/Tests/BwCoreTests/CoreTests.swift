@@ -6,6 +6,51 @@ import CryptoKit
 @testable import BwCore
 
 final class CoreTests: XCTestCase {
+    func testPINRestartSettingPreservesExistingPreferences() throws {
+        var settings = Settings(); settings.grantMinutes = 42; settings.approvalTimeout = 120; settings.pinEnabled = true
+        var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+        legacy.removeValue(forKey: "pinRequirePrimaryAfterRestart")
+        let migrated = try JSONDecoder().decode(Settings.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertTrue(migrated.pinRequiresPrimaryUnlockAfterRestart)
+        XCTAssertEqual(migrated.grantMinutes, 42); XCTAssertEqual(migrated.approvalTimeout, 120); XCTAssertTrue(migrated.pinEnabled)
+        settings.pinRequiresPrimaryUnlockAfterRestart = false
+        let restored = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+        XCTAssertFalse(restored.pinRequiresPrimaryUnlockAfterRestart); XCTAssertEqual(restored.grantMinutes, 42)
+    }
+    @MainActor func testPINRestartRequirementToggleAndPersistentFailures() async throws {
+        let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try LocalStore(root: directory, encryptionKey: Crypto.random(32))
+        let user = try Crypto.random(64), kdf = KDF(iterations: 5000)
+        let master = try kdf.derive(password: "fixture", salt: "fixture@example.com")
+        let snapshot: Object = ["profile": [:], "ciphers": []]
+        let account = Account(server: try Server(), email: "fixture@example.com", salt: "fixture@example.com", kdf: kdf, accessToken: "", expires: Date(), encryptedUserKey: try Crypto.encrypt(user, key: Crypto.stretch(master)), userID: "fixture", snapshot: try JSONSerialization.data(withJSONObject: snapshot), syncedAt: Date())
+        try store.save(account, name: "account")
+        let initial = try Vault(store: store, settings: Settings(), transient: true)
+        try await initial.unlock(password: "fixture"); try await initial.setPIN("123456")
+        var settings = initial.settings
+        let required = try Vault(store: store, settings: settings, transient: true)
+        do { try await required.unlockPIN("123456"); XCTFail("Default policy must require primary unlock after restart") } catch {}
+        XCTAssertFalse(required.unlocked)
+        try await required.unlock(password: "fixture"); required.lock()
+        try await required.unlockPIN("123456"); XCTAssertTrue(required.unlocked)
+        settings.pinRequiresPrimaryUnlockAfterRestart = false
+        let direct = try Vault(store: store, settings: settings, transient: true)
+        try await direct.unlockPIN("123456"); XCTAssertTrue(direct.unlocked)
+        direct.lock(); direct.settings.pinRequiresPrimaryUnlockAfterRestart = true
+        let requiredAgain = try Vault(store: store, settings: direct.settings, transient: true)
+        do { try await requiredAgain.unlockPIN("123456"); XCTFail("Re-enabling the setting must restore the restart requirement") } catch {}
+        XCTAssertFalse(requiredAgain.unlocked)
+        for attempt in 1...5 {
+            let restarted = try Vault(store: store, settings: settings, transient: true)
+            do { try await restarted.unlockPIN("incorrect"); XCTFail("Incorrect PIN must fail") } catch {}
+            XCTAssertFalse(restarted.unlocked)
+            XCTAssertEqual(restarted.settings.pinEnabled, attempt < 5)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("pin.sealed").path))
+        let exhausted = try Vault(store: store, settings: settings, transient: true)
+        do { try await exhausted.unlockPIN("123456"); XCTFail("Five failures across restarts must clear the PIN") } catch {}
+        XCTAssertFalse(exhausted.unlocked)
+    }
     func testNotificationActionsRespectLockAndForwarding() throws {
         let identity = PublicIdentity(id: "fixture", name: "Fixture", blob: Data([1]), type: "ssh-ed25519")
         let process = ProcessNode(pid: getpid(), started: 1, path: "/usr/bin/ssh")

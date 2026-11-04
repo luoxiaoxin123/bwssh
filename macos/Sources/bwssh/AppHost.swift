@@ -336,7 +336,7 @@ import BwCore
     #endif
     @objc private func syncVault() { vault.perform { try await self.vault.sync() } }
     @objc private func revoke() { agent.revokeAll() }
-    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
+    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.4", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
     @objc private func quit() { vault.lock(); server?.stop(); NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) { vault.lock(); server?.stop(); timer?.invalidate() }
 }
