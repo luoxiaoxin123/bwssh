@@ -43,6 +43,8 @@ public struct Account: Codable {
     public var userID: String
     public var snapshot: Data
     public var syncedAt: Date
+    public var apiClientID: String? = nil
+    public var apiClientSecret: String? = nil
 }
 
 public struct LoginChallenge: Error, LocalizedError {
@@ -114,9 +116,10 @@ public final class BitwardenAPI {
         guard let encrypted = token.text("key") ?? profile.text("key") ?? unlock.text("masterKeyEncryptedUserKey") else { throw BwError("Missing encrypted user key") }
         var userKey = try Crypto.decryptUserKey(encrypted, master: master); defer { userKey.wipe() }
         guard userKey.count == 64 || userKey.count == 32 else { throw BwError("Invalid user key") }
-        let account = Account(server: server, email: email, salt: salt, kdf: kdf, accessToken: access, refreshToken: token.text("refresh_token"),
+        var account = Account(server: server, email: email, salt: salt, kdf: kdf, accessToken: access, refreshToken: token.text("refresh_token"),
             expires: Date().addingTimeInterval(Double(token.number("expires_in") ?? 3600)), encryptedUserKey: encrypted,
             userID: profile.text("id") ?? "", snapshot: try JSONSerialization.data(withJSONObject: sync), syncedAt: Date())
+        if !clientID.isEmpty { account.apiClientID = clientID; account.apiClientSecret = clientSecret }
         return (account, Secret(userKey))
     }
     public func sendEmailCode(server: Server, email: String, password: String, challengeSession: String?) async throws {
@@ -128,10 +131,14 @@ public final class BitwardenAPI {
     }
     public func refreshed(_ account: Account) async throws -> Account {
         guard account.expires.timeIntervalSinceNow < 120 else { return account }
-        guard let refresh = account.refreshToken else { throw BwError(tr("登录已过期，请重新登录。", "Session expired. Sign in again.")) }
-        let token = try await request(account.server.identity + "/connect/token", form: ["grant_type": "refresh_token", "client_id": "desktop", "refresh_token": refresh])
+        let form: [String: String]
+        if let refresh = account.refreshToken { form = ["grant_type": "refresh_token", "client_id": "desktop", "refresh_token": refresh] }
+        else if let client = account.apiClientID, let secret = account.apiClientSecret {
+            form = ["grant_type": "client_credentials", "client_id": client, "client_secret": secret, "scope": "api", "deviceType": "7", "deviceIdentifier": Self.deviceID, "deviceName": "macos"]
+        } else { throw BwError(tr("登录已过期，请重新登录。", "Session expired. Sign in again.")) }
+        let token = try await request(account.server.identity + "/connect/token", form: form)
         guard let access = token.text("access_token") else { throw BwError("Missing access token") }
-        var updated = account; updated.accessToken = access; updated.refreshToken = token.text("refresh_token") ?? refresh
+        var updated = account; updated.accessToken = access; updated.refreshToken = token.text("refresh_token") ?? account.refreshToken
         updated.expires = Date().addingTimeInterval(Double(token.number("expires_in") ?? 3600)); return updated
     }
     public func sync(_ account: Account) async throws -> Account {

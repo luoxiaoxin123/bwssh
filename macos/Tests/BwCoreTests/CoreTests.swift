@@ -260,6 +260,32 @@ final class CoreTests: XCTestCase {
             XCTFail("Expected a two-factor challenge")
         } catch let c as LoginChallenge { XCTAssertEqual(Set(c.providers), Set([0, 1])); XCTAssertFalse(c.newDevice); XCTAssertEqual(c.session, "fixture-session") }
     }
+    func testAPIKeySessionRenewsAfterExpiration() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
+        let api = BitwardenAPI(session: URLSession(configuration: config))
+        var account = Account(server: try Server(), email: "x@example.com", salt: "x@example.com", kdf: KDF(), accessToken: "expired", expires: .distantPast, encryptedUserKey: "", userID: "x", snapshot: Data(), syncedAt: Date())
+        account.apiClientID = "user.fixture"; account.apiClientSecret = "fixture-api-secret"
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/connect/token")
+            return (200, ["access_token": "renewed", "expires_in": 3600])
+        }
+        defer { StubURLProtocol.handler = nil }
+        let refreshed = try await api.refreshed(account)
+        XCTAssertEqual(refreshed.accessToken, "renewed"); XCTAssertEqual(refreshed.apiClientID, account.apiClientID)
+        XCTAssertTrue(refreshed.expires > Date())
+    }
+    @MainActor func testRenamePreservesEncryptedMetadataAndAttachments() async throws {
+        let key = try Crypto.random(64)
+        let original: Object = ["Type": 5, "Name": "old ciphertext", "Notes": "notes ciphertext", "Fields": [["Name": "field ciphertext", "Value": "value ciphertext"]],
+            "FolderId": "folder", "Favorite": true, "RevisionDate": "revision", "Key": "wrapped key", "SshKey": ["PrivateKey": "private ciphertext", "PublicKey": "public ciphertext", "KeyFingerprint": "fp ciphertext"],
+            "Attachments": [["Id": "attachment", "FileName": "file ciphertext", "Key": "attachment key"]]]
+        let renamed = try Vault.renameRequest(original, userID: "user", key: key, name: "new name")
+        XCTAssertEqual(renamed.text("notes"), original.text("notes")); XCTAssertEqual(renamed.text("folderId"), "folder")
+        XCTAssertEqual(renamed.object("sshKey").text("privateKey"), "private ciphertext")
+        XCTAssertEqual(renamed.object("attachments2").object("attachment").text("fileName"), "file ciphertext")
+        XCTAssertEqual(renamed.text("lastKnownRevisionDate"), "revision")
+        XCTAssertEqual(try Crypto.decrypt(renamed.text("name")!, key: key), Data("new name".utf8))
+    }
     func temporaryDirectory() throws -> URL {
         let directory = URL(fileURLWithPath: "/tmp/bwssh-test-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true); return directory

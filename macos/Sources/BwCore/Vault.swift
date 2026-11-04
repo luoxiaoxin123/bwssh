@@ -227,14 +227,26 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         var rawUser = userKey.data(); defer { rawUser.wipe() }
         var orgs = try VaultDecryptor.organizationKeys(root, userKey: rawUser); defer { for id in Array(orgs.keys) { orgs[id]?.wipe() } }
         var key = try VaultDecryptor.resolve(cipher, userKey: rawUser, orgs: orgs); defer { key.wipe() }
-        // Preserve the original ciphertext and all metadata when renaming.
-        var body: Object = [:]
-        for (k, value) in cipher { let normalized = k.prefix(1).lowercased() + k.dropFirst(); body[normalized] = value }
-        body["name"] = try Crypto.encrypt(Data(name.utf8), key: key); body["encryptedFor"] = account.userID
-        body["lastKnownRevisionDate"] = cipher.field("revisionDate")
+        let body = try Self.renameRequest(cipher, userID: account.userID, key: key, name: name)
         account = try await api.refreshed(account); guard generation == epoch else { throw CancellationError() }
         self.account = account; try store.save(account, name: "account")
         try await api.mutate(account, method: "PUT", path: "/ciphers/\(id)", body: body); try await sync()
+    }
+    static func renameRequest(_ cipher: Object, userID: String, key: Data, name: String) throws -> Object {
+        var body: Object = ["type": 5, "encryptedFor": userID, "name": try Crypto.encrypt(Data(name.utf8), key: key),
+            "lastKnownRevisionDate": cipher.field("revisionDate") ?? NSNull()]
+        for field in ["organizationId", "folderId", "favorite", "reprompt", "key", "notes", "fields", "passwordHistory", "archivedDate"] {
+            body[field] = cipher.field(field) ?? NSNull()
+        }
+        body["favorite"] = cipher.field("favorite") ?? false; body["reprompt"] = cipher.field("reprompt") ?? 0
+        let ssh = cipher.object("sshKey")
+        body["sshKey"] = ["privateKey": ssh.field("privateKey") ?? NSNull(), "publicKey": ssh.field("publicKey") ?? NSNull(), "keyFingerprint": ssh.field("keyFingerprint") ?? NSNull()]
+        var attachments: Object = [:]
+        for attachment in cipher.objects("attachments") {
+            if let id = attachment.text("id") { attachments[id] = ["fileName": attachment.field("fileName") ?? NSNull(), "key": attachment.field("key") ?? NSNull()] }
+        }
+        if !attachments.isEmpty { body["attachments2"] = attachments }
+        return body
     }
     public func trash(_ id: String) async throws {
         guard unlocked, var account else { throw BwError("Unlock first") }; let generation = epoch
