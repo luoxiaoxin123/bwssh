@@ -45,7 +45,7 @@ https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
 
 ### Windows
 
-在 [Releases](https://github.com/luoxiaoxin123/bwssh/releases) 页面下载 `bwssh-setup-x.y.z.exe` 并运行。安装不需要管理员权限。
+在 [Releases](https://github.com/luoxiaoxin123/bwssh/releases) 页面下载对应架构的 `bwssh-setup-x.y.z-x64.exe` 或 `bwssh-setup-x.y.z-arm64.exe` 并运行。安装不需要管理员权限。
 
 系统要求：Windows 10 2004（19041）或更高版本，x64 或 ARM64。安装包没有代码签名，首次运行时 SmartScreen 可能会提示，点“更多信息 → 仍要运行”即可。
 
@@ -53,14 +53,14 @@ https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
 
 系统要求：macOS 13 或更高版本，支持 Apple Silicon 和 Intel。
 
-1. 打开 [macOS 下载页](https://github.com/luoxiaoxin123/bwssh/actions/workflows/macos.yml?query=branch%3Acodex%2Fmacos-native)，选择最近一次成功的构建，在页面底部的 **Artifacts** 下载对应的包（需要登录 GitHub）：
+1. 打开 [Releases 下载页](https://github.com/luoxiaoxin123/bwssh/releases)，下载对应架构的 macOS 包：
 
    | 你的 Mac | 下载哪个包 |
    | --- | --- |
-   | M 系列芯片 | `bwssh-macos-arm64` |
-   | Intel 芯片 | `bwssh-macos-x86_64` |
+   | M 系列芯片 | `bwssh-x.y.z-macos-arm64.dmg` |
+   | Intel 芯片 | `bwssh-x.y.z-macos-x86_64.dmg` |
 
-2. 解压下载的文件，打开里面的 `.dmg`，把 `bwssh.app` 拖到“应用程序”文件夹，再打开它。也可以使用包内的 `.zip`。
+2. 打开下载的 `.dmg`，把 `bwssh.app` 拖到“应用程序”文件夹，再打开它。也可以下载并解压 `.zip`。
 3. 首次运行时允许 bwssh 发送通知，之后才能在右上角直接处理密钥审批。如果之前没允许，可以到“系统设置 → 通知 → bwssh”中开启。
 
 当前 macOS 包尚未通过 Apple 公证，首次打开可能被系统拦截。确认下载来源后，可到“系统设置 → 隐私与安全性”中选择“仍要打开”。更新后，系统也可能再次询问是否允许访问钥匙串。
@@ -219,7 +219,7 @@ python3 macos/package.py --arch arm64 --version 1.0.5
 # Intel Mac 将 arm64 换成 x86_64
 ```
 
-安装包输出到 `artifacts/macos/<架构>/`。GitHub 的 [macOS 打包流程](.github/workflows/macos.yml) 会分别测试并生成 ARM、Intel 两份包。更多构建和调试说明见 [macOS 开发文档](macos/README.md)。
+安装包输出到 `artifacts/macos/<架构>/`。GitHub 的 [macOS 打包流程](.github/workflows/macos.yml) 会分别测试并生成 ARM、Intel 两份包，发布 Release 时自动上传。更多构建和调试说明见 [macOS 开发文档](macos/README.md)。
 
 ## 许可证
 

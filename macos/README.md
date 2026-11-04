@@ -18,7 +18,7 @@ python3 macos/package.py --arch arm64 --version 1.0.5
 输出目录为 `artifacts/macos/<arch>/`，包含应用、ZIP、DMG 和 `SHA256SUMS`。
 打包脚本使用临时签名，不包含 Developer ID 签名和 Apple 公证。
 
-[macOS GitHub Actions](../.github/workflows/macos.yml) 分别在 ARM 和 Intel runner 上运行测试、检查按需启动、构建安装包，并校验签名和架构。上传的包默认保留 30 天。
+[macOS GitHub Actions](../.github/workflows/macos.yml) 分别在 ARM 和 Intel runner 上运行测试、检查按需启动、构建安装包，并校验签名和架构。Actions 构建产物默认保留 30 天；发布 GitHub Release 时，两种架构的 ZIP、DMG 和校验文件也会上传到该 Release。
 
 ## 本地验证
 

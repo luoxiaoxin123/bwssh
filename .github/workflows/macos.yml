@@ -9,6 +9,8 @@ on:
       - "src/BwSshAgent.App/Assets/app.png"
   pull_request:
     paths: ["macos/**", ".github/workflows/macos.yml"]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -18,10 +20,10 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: macos-${{ github.ref }}
+  group: macos-${{ github.event_name }}-${{ github.event_name == 'release' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +41,17 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - name: Resolve package version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${RELEASE_TAG:-${INPUT_VERSION:-1.0.5}}"
+          version="${version#[vV]}"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
       - name: Verify native runner
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
@@ -52,7 +65,7 @@ jobs:
         run: python3 macos/check-on-demand.py
       - name: Build native application, ZIP and DMG
         env:
-          PACKAGE_VERSION: ${{ inputs.version || '1.0.5' }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: python3 macos/package.py --arch "$PACKAGE_ARCH" --version "$PACKAGE_VERSION"
       - name: Upload packages
@@ -65,3 +78,13 @@ jobs:
             artifacts/macos/${{ matrix.arch }}/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
+      - name: Attach packages to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PACKAGE_ARCH: ${{ matrix.arch }}
+        run: |
+          dir="artifacts/macos/$PACKAGE_ARCH"
+          cp "$dir/SHA256SUMS" "$dir/SHA256SUMS-macos-$PACKAGE_ARCH.txt"
+          gh release upload "$RELEASE_TAG" "$dir"/*.zip "$dir"/*.dmg "$dir/SHA256SUMS-macos-$PACKAGE_ARCH.txt" --clobber

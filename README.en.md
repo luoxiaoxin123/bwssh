@@ -45,7 +45,7 @@ The demos below show the Windows version. The macOS version uses native macOS wi
 
 ### Windows
 
-Download `bwssh-setup-x.y.z.exe` from [Releases](https://github.com/luoxiaoxin123/bwssh/releases) and run it. No administrator rights are needed.
+Download `bwssh-setup-x.y.z-x64.exe` or `bwssh-setup-x.y.z-arm64.exe` from [Releases](https://github.com/luoxiaoxin123/bwssh/releases) and run it. No administrator rights are needed.
 
 Requirements: Windows 10 2004 (19041) or later, x64 or ARM64. The installer is not code-signed, so SmartScreen may warn on first run. Choose "More info → Run anyway".
 
@@ -53,14 +53,14 @@ Requirements: Windows 10 2004 (19041) or later, x64 or ARM64. The installer is n
 
 Requires macOS 13 or later. Apple Silicon and Intel Macs are supported.
 
-1. Open the [macOS downloads page](https://github.com/luoxiaoxin123/bwssh/actions/workflows/macos.yml?query=branch%3Acodex%2Fmacos-native), choose the latest successful build, and download a package from **Artifacts** at the bottom of the page. You need to be signed in to GitHub.
+1. Open the [Releases page](https://github.com/luoxiaoxin123/bwssh/releases) and download the macOS package for your architecture.
 
    | Your Mac | Package |
    | --- | --- |
-   | M-series chip | `bwssh-macos-arm64` |
-   | Intel chip | `bwssh-macos-x86_64` |
+   | M-series chip | `bwssh-x.y.z-macos-arm64.dmg` |
+   | Intel chip | `bwssh-x.y.z-macos-x86_64.dmg` |
 
-2. Extract the download, open the `.dmg` inside, drag `bwssh.app` into Applications, and open it. A `.zip` is also included.
+2. Open the downloaded `.dmg`, drag `bwssh.app` into Applications, and open it. You can also download and extract the `.zip`.
 3. Allow notifications when asked, so you can handle approvals in the top-right corner. If notifications were denied earlier, enable them in System Settings → Notifications → bwssh.
 
 The macOS package is not yet notarized by Apple, so macOS may block the first launch. After checking the download source, use "Open Anyway" in System Settings → Privacy & Security. After an update, macOS may ask for Keychain access again.
@@ -219,7 +219,7 @@ python3 macos/package.py --arch arm64 --version 1.0.5
 # On Intel Macs, replace arm64 with x86_64.
 ```
 
-Packages are written to `artifacts/macos/<arch>/`. The [macOS workflow](.github/workflows/macos.yml) tests and builds separate ARM and Intel packages. See the [macOS development notes](macos/README.md) for more build and debugging details.
+Packages are written to `artifacts/macos/<arch>/`. The [macOS workflow](.github/workflows/macos.yml) tests and builds separate ARM and Intel packages, and uploads them when a Release is published. See the [macOS development notes](macos/README.md) for more build and debugging details.
 
 ## License
 
