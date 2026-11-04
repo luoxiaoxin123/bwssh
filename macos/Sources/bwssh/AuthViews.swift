@@ -54,7 +54,6 @@ struct LockedLoginPage: View {
                     if vault.busy { ProgressView().controlSize(.small) }
                     Divider().padding(.vertical, 4)
                     HStack {
-                        Button(tr("刷新解锁信息", "Refresh unlock information")) { vault.perform { try await vault.refreshUnlockInformation() } }.disabled(vault.busy)
                         Spacer()
                         Button(tr("重新登录…", "Sign in again…")) { vault.message = ""; signInAgain = true }.disabled(vault.busy)
                     }.font(.callout)

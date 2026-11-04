@@ -123,10 +123,7 @@ import BwCore
     private func notify(_ request: PendingApproval) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            guard await notificationAuthorization?.value == true else {
-                guard agent.pending.contains(where: { $0.id == request.id }) else { return }
-                showApproval(notice: tr("系统通知未启用，请在系统设置 → 通知 → bwssh 中允许通知。", "Enable bwssh notifications in System Settings → Notifications.")); return
-            }
+            _ = await notificationAuthorization?.value
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
             guard agent.pending.contains(where: { $0.id == request.id }) else { return }

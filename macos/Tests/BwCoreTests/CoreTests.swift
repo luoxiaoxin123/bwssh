@@ -59,7 +59,7 @@ final class CoreTests: XCTestCase {
         let malformed: Object = ["userDecryption": ["masterPasswordUnlock": ["masterKeyWrappedUserKey": "new"]]]
         XCTAssertThrowsError(try MasterPasswordMaterial.resolve(malformed, fallback: fallback))
     }
-    @MainActor func testRefreshUnlockInformationRepairsStaleLegacyKDF() async throws {
+    @MainActor func testUnlockAutomaticallyRepairsStaleLegacyKDF() async throws {
         let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
         let store = try LocalStore(root: directory, encryptionKey: Crypto.random(32)), user = try Crypto.random(64)
         let master = try KDF(iterations: 5000).derive(password: "fixture", salt: "x@example.com")
@@ -68,16 +68,26 @@ final class CoreTests: XCTestCase {
         let stale = Account(server: try Server(), email: "x@example.com", salt: "stale", kdf: KDF(iterations: 7000), accessToken: "fixture", expires: Date().addingTimeInterval(3600), encryptedUserKey: wrapped, userID: "user", snapshot: try JSONSerialization.data(withJSONObject: snapshot), syncedAt: Date())
         try store.save(stale, name: "account")
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
+        var requests = 0
         StubURLProtocol.handler = { request in
+            requests += 1
             if request.url!.path.hasSuffix("prelogin/password") { return (200, ["kdfSettings": ["kdfType": 0, "iterations": 5000], "salt": "x@example.com"]) }
             return (200, snapshot)
         }
         defer { StubURLProtocol.handler = nil }
         let vault = try Vault(api: BitwardenAPI(session: URLSession(configuration: config)), store: store, settings: Settings(), transient: true)
-        do { try await vault.unlock(password: "fixture"); XCTFail("Stale metadata must fail authentication") } catch {}
-        try await vault.refreshUnlockInformation(); XCTAssertEqual(vault.screen, .unlock)
-        XCTAssertEqual(vault.account?.kdf, KDF(iterations: 5000)); XCTAssertEqual(vault.account?.salt, "x@example.com")
         try await vault.unlock(password: "fixture"); XCTAssertEqual(vault.screen, .main)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(vault.account?.kdf, KDF(iterations: 5000)); XCTAssertEqual(vault.account?.salt, "x@example.com")
+        vault.lock()
+        StubURLProtocol.handler = { _ in requests += 1; return (503, [:]) }
+        try await vault.unlock(password: "fixture"); XCTAssertEqual(vault.screen, .main)
+        XCTAssertEqual(requests, 2) // Valid cached passwords remain usable offline.
+        vault.lock()
+        do { try await vault.unlock(password: "incorrect"); XCTFail("Wrong passwords must still fail") } catch {}
+        XCTAssertEqual(vault.screen, .unlock); XCTAssertEqual(requests, 3)
+        try await vault.unlock(password: "fixture"); XCTAssertEqual(vault.screen, .main)
+        XCTAssertEqual(requests, 3) // Failed refresh did not corrupt the working cache.
     }
     @MainActor func testModernLoginSyncAndRestartShareOneUnlockTuple() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]

@@ -115,16 +115,39 @@ public enum VaultScreen: Equatable { case login, unlock, main }
         self.account = account; apply(loaded, key: key)
     }
     public func unlock(password: String) async throws {
-        guard let account else { throw BwError("Sign in first") }; let generation = epoch
+        guard var account else { throw BwError("Sign in first") }; let generation = epoch
+        let result: (Secret, MasterPasswordMaterial)
+        do { result = try await Self.passwordKey(password, account: account) }
+        catch {
+            let cachedError = error
+            guard generation == epoch else { throw CancellationError() }
+            guard !account.accessToken.isEmpty || account.refreshToken != nil else { throw cachedError }
+            // Keep offline unlock fast. Only a failed cached unwrap attempts one metadata repair.
+            do {
+                let (kdf, salt) = try await api.prelogin(server: account.server, email: account.email)
+                guard generation == epoch else { throw CancellationError() }
+                account.kdf = kdf; account.salt = salt
+                account = try await api.sync(account)
+                guard generation == epoch else { throw CancellationError() }
+                result = try await Self.passwordKey(password, account: account)
+            } catch {
+                guard generation == epoch, !Task.isCancelled else { throw CancellationError() }
+                throw cachedError
+            }
+        }
+        guard generation == epoch else { throw CancellationError() }
+        try await unlock(key: result.0, generation: generation, restorePIN: true)
+        result.1.apply(to: &account)
+        try store.save(account, name: "account"); self.account = account
+    }
+    private static func passwordKey(_ password: String, account: Account) async throws -> (Secret, MasterPasswordMaterial) {
         let material = try MasterPasswordMaterial.cached(account)
         let key = try await Task.detached {
             var master = try material.kdf.derive(password: password, salt: material.salt); defer { master.wipe() }
             var raw = try Crypto.decryptUserKey(material.encryptedKey, master: master); defer { raw.wipe() }
             return Secret(raw)
         }.value
-        try await unlock(key: key, generation: generation, restorePIN: true)
-        var repaired = account; material.apply(to: &repaired)
-        try store.save(repaired, name: "account"); self.account = repaired
+        return (key, material)
     }
     private func unlock(key: Secret, generation: Int, restorePIN: Bool) async throws {
         guard let account else { throw BwError("Sign in first") }
@@ -161,16 +184,6 @@ public enum VaultScreen: Equatable { case login, unlock, main }
         }
         try store.save(updated, name: "account"); self.account = updated
         onLock?() // synchronizing may remove a key or change its access; clear all cached decisions.
-    }
-    public func refreshUnlockInformation() async throws {
-        guard !unlocked, var account else { throw BwError("Lock the vault before refreshing unlock information") }
-        let generation = epoch
-        let (kdf, salt) = try await api.prelogin(server: account.server, email: account.email)
-        account.kdf = kdf; account.salt = salt
-        let updated = try await api.sync(account)
-        guard generation == epoch, !unlocked else { throw CancellationError() }
-        try store.save(updated, name: "account"); self.account = updated
-        message = tr("已刷新解锁信息，请重新输入主密码。", "Unlock information refreshed. Enter your master password again.")
     }
     public func sign(id: String, data: Data, flags: UInt32) throws -> Data {
         guard unlocked, let key = keys[id] else { throw BwError("Vault is locked or key unavailable") }
