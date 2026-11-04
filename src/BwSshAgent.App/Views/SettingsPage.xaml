@@ -51,6 +51,7 @@
                     <TextBlock x:Name="UnlockHint" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ToggleSwitch x:Name="HelloSwitch" Header="{l:T Zh='使用 Windows Hello 解锁', En='Unlock with Windows Hello'}" Toggled="OnHelloToggled" />
                     <ToggleSwitch x:Name="PinSwitch" Header="{l:T Zh='使用 PIN 解锁', En='Unlock with PIN'}" Toggled="OnPinToggled" />
+                    <ToggleSwitch x:Name="RequirePrimaryUnlockSwitch" Header="{l:T Zh='每次启动后先用主密码或 Windows Hello 解锁', En='Require master password or Windows Hello after each launch'}" Toggled="OnRequirePrimaryUnlockToggled" />
                     <TextBlock x:Name="PinModeText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>

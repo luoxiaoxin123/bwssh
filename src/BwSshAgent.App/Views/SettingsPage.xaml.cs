@@ -52,6 +52,8 @@ public sealed partial class SettingsPage : Page, IRefreshable
         var unlocked = session.State == VaultState.Unlocked;
         HelloSwitch.IsOn = session.Hello.IsEnrolled;
         PinSwitch.IsOn = session.Pin.IsEnabled;
+        RequirePrimaryUnlockSwitch.IsOn = !session.Pin.IsPersistent;
+        RequirePrimaryUnlockSwitch.IsEnabled = unlocked && session.Pin.IsEnabled && session.Pin.IsAvailable;
         HelloSwitch.IsEnabled = unlocked || session.Hello.IsEnrolled;
         PinSwitch.IsEnabled = unlocked || session.Pin.IsEnabled;
         UnlockHint.Text = unlocked
@@ -194,6 +196,30 @@ public sealed partial class SettingsPage : Page, IRefreshable
         else if (!PinSwitch.IsOn && session.Pin.IsEnabled)
         {
             session.Pin.Disable();
+        }
+        Refresh();
+    }
+
+    private void OnRequirePrimaryUnlockToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+        var session = Host.Session;
+        if (session.State != VaultState.Unlocked || !session.Pin.IsAvailable)
+        {
+            Refresh();
+            return;
+        }
+        try
+        {
+            session.Pin.SetPersistent(!RequirePrimaryUnlockSwitch.IsOn);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Changing PIN restart setting failed", ex);
+            ShowMessage(InfoBarSeverity.Error, L.T("修改 PIN 设置失败", "Could not change PIN setting"), ex.Message);
         }
         Refresh();
     }

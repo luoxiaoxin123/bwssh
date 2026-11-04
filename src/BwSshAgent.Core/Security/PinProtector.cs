@@ -71,6 +71,36 @@ public sealed class PinProtector
         Changed?.Invoke();
     }
 
+    public void SetPersistent(bool persistent)
+    {
+        var previous = _state ?? throw new PinException(L.T("未设置 PIN。", "No PIN is set."));
+        if (previous.Persistent == persistent)
+        {
+            return;
+        }
+        var source = previous.Persistent ? previous.Envelope : _memoryEnvelope;
+        if (source == null)
+        {
+            throw new PinException(L.T("请先用主密码或 Windows Hello 解锁，再修改 PIN 设置。", "Unlock with your master password or Windows Hello before changing PIN settings."));
+        }
+        // Copy before clearing the old in-memory envelope. The PIN itself is unchanged.
+        var envelope = (byte[])source.Clone();
+        var failures = previous.Persistent ? previous.FailedAttempts : _memoryFailures;
+        var updated = new PinState
+        {
+            Persistent = persistent,
+            Envelope = persistent ? envelope : null,
+            SealedPin = previous.SealedPin,
+            FailedAttempts = failures,
+        };
+        SecureFile.WriteJson(FileName, updated);
+        ClearMemory();
+        _state = updated;
+        _memoryEnvelope = persistent ? null : envelope;
+        _memoryFailures = persistent ? 0 : failures;
+        Changed?.Invoke();
+    }
+
     public void Disable()
     {
         SecureFile.Delete(FileName);

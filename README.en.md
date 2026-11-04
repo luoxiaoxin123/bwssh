@@ -121,7 +121,7 @@ To enable Touch ID, first unlock with your master password, then open Settings �
 
 By default, PIN requires one master password or Windows Hello / Touch ID unlock after each start. To use PIN immediately after restarting:
 
-- **Windows**: when setting up the PIN, uncheck "After restarting, require the master password or Windows Hello first".
+- **Windows**: turn off "Require master password or Windows Hello after each launch" in Settings → Quick unlock. You do not need to set up an existing PIN again. You can also uncheck the corresponding option when first setting up the PIN.
 - **macOS**: turn off "Require master password or Touch ID after each launch" in Settings → Quick unlock. You do not need to set up an existing PIN again.
 
 Unlock the vault before changing these settings. Five incorrect PIN attempts remove the PIN; use the master password or your configured Windows Hello / Touch ID to unlock. Restarting does not give you more PIN attempts.
