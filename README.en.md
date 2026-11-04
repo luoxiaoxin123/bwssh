@@ -215,7 +215,7 @@ Requires Swift and Xcode. Test and package for your Mac's architecture:
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.4
+python3 macos/package.py --arch arm64 --version 1.0.5
 # On Intel Macs, replace arm64 with x86_64.
 ```
 

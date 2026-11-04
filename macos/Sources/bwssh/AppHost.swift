@@ -71,7 +71,12 @@ import BwCore
                 let command = preview.addItem(withTitle: title, action: selector, keyEquivalent: ""); command.target = self
             }
             item.submenu = preview; menu.addItem(item)
-            showWindow(); return
+            if (ProcessInfo.processInfo.environment["BWSSH_UI_PREVIEW_STATE"] ?? "").hasPrefix("approval-") {
+                agent.onPrompt = { [weak self] _ in self?.showApproval() }
+                agent.onDismiss = { [weak self] _ in self?.approvalPanel?.orderOut(nil) }
+                agent.queuePreviewApproval()
+            } else { showWindow() }
+            return
         }
         #endif
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -320,7 +325,16 @@ import BwCore
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
             panel.title = tr("bwssh · 密钥使用审批", "bwssh · Key approval"); panel.isReleasedWhenClosed = false
             panel.level = .floating; panel.hidesOnDeactivate = false; panel.delegate = self
-            panel.contentView = NSHostingView(rootView: ApprovalsView(vault: vault, agent: agent, notice: approvalNotice)); panel.center(); approvalPanel = panel
+            let content = NSHostingView(rootView: ApprovalsView(vault: vault, agent: agent, notice: approvalNotice) { [weak panel] size in
+                guard let panel, size.width > 0, size.height > 0 else { return }
+                let top = panel.frame.maxY
+                panel.setContentSize(NSSize(width: ceil(size.width), height: ceil(size.height)))
+                panel.setFrameOrigin(NSPoint(x: panel.frame.minX, y: top - panel.frame.height))
+            })
+            content.sizingOptions = [.intrinsicContentSize]
+            panel.contentView = content
+            panel.setContentSize(content.fittingSize)
+            panel.center(); approvalPanel = panel
         }
         approvalPanel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -336,7 +350,7 @@ import BwCore
     #endif
     @objc private func syncVault() { vault.perform { try await self.vault.sync() } }
     @objc private func revoke() { agent.revokeAll() }
-    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.4", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
+    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.5", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
     @objc private func quit() { vault.lock(); server?.stop(); NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) { vault.lock(); server?.stop(); timer?.invalidate() }
 }

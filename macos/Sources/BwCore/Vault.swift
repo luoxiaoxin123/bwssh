@@ -80,6 +80,7 @@ public enum VaultScreen: Equatable { case login, unlock, main }
     @Published public var settings: Settings
     @Published public var busy = false
     @Published public var message = ""
+    public var pinAvailable: Bool { settings.pinEnabled && (!settings.pinRequiresPrimaryUnlockAfterRestart || pinWrappingKey != nil) }
     public var screen: VaultScreen { account == nil ? .login : unlocked ? .main : .unlock }
     public var onLock: (() -> Void)?
     public var onKeysChanged: (() -> Void)?
@@ -87,14 +88,18 @@ public enum VaultScreen: Equatable { case login, unlock, main }
     private let store: LocalStore
     private var userKey: Secret?
     private var keys = [String: SSHKey]()
-    private var pinWrappingKey: Secret?
+    @Published private var pinWrappingKey: Secret?
     private var epoch = 0
     private let transient: Bool
     public init(api: BitwardenAPI = BitwardenAPI(), store: LocalStore? = nil, settings: Settings = Settings.load(), transient: Bool = false) throws {
         self.api = api; self.store = try store ?? LocalStore(); self.settings = settings
         self.transient = transient
         account = try self.store.load(Account.self, name: "account")
-        if account != nil { identities = try self.store.load([PublicIdentity].self, name: "public-keys") ?? [] }
+        if account != nil {
+            identities = try self.store.load([PublicIdentity].self, name: "public-keys") ?? []
+            // The encrypted PIN file is authoritative when preferences and stored data disagree.
+            self.settings.pinEnabled = try self.store.load(PinEnvelope.self, name: "pin") != nil
+        }
     }
     public func saveSettings() {
         guard !transient else { return }

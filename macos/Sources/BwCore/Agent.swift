@@ -147,6 +147,16 @@ public enum ApprovalChoice: Equatable { case approve, grant, deny }
         self.vault = vault; self.store = try store ?? LocalStore(); audit = try self.store.load([AuditEntry].self, name: "audit") ?? []
         vault.onLock = { [weak self] in self?.revokeAll(); self?.cancelAll() }
     }
+    #if DEBUG
+    /// Isolated UI preview only; never signs or loads a personal account.
+    public func queuePreviewApproval() {
+        guard vault.account?.userID == "preview", let identity = vault.identities.first else { return }
+        let request = PendingApproval(id: UUID(), identity: identity,
+            context: SignContext(keyBlob: identity.blob, data: Data(), flags: 0, host: "SHA256:exampleVerifiedHostKeyForPreviewOnly123456", forwarded: false),
+            chain: ProcessNode.chain(getpid()), target: nil, destination: "preview@example.com")
+        Task { _ = await prompt(request) }
+    }
+    #endif
     public func revokeAll() { remembered.removeAll(); grants.removeAll() }
     public func revoke(_ id: String) { grants.removeAll { $0.id == id } }
     public func clearAudit() throws { try store.save([AuditEntry](), name: "audit"); audit = [] }

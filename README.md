@@ -215,7 +215,7 @@ Windows 版在 GitHub 上发布新的 Release 时，[workflow](.github/workflows
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.4
+python3 macos/package.py --arch arm64 --version 1.0.5
 # Intel Mac 将 arm64 换成 x86_64
 ```
 

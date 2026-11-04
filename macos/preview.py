@@ -8,7 +8,7 @@ import subprocess
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--state", choices=["login", "locked", "unlocked"], default="unlocked")
+parser.add_argument("--state", choices=["login", "locked", "unlocked", "approval-pin", "approval-password"], default="unlocked")
 args = parser.parse_args()
 
 root = pathlib.Path(__file__).resolve().parent

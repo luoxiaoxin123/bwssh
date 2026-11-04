@@ -11,7 +11,7 @@
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.4
+python3 macos/package.py --arch arm64 --version 1.0.5
 # Intel Mac 使用 --arch x86_64
 ```
 
@@ -44,8 +44,10 @@ Touch ID、通知权限、登录项和锁屏行为仍需在实际设备上检查
 
 ```sh
 python3 macos/preview.py --state locked
-# 也支持 --state login 和 --state unlocked
+# 也支持 --state login、unlocked、approval-pin、approval-password
 ```
+
+审批预览中的虚构 PIN 为 `123456`。
 
 生成独立的 Debug 预览应用，使用虚构账号和临时密钥，不读取个人密码库，不启动 agent、通知或定时同步。预览菜单可切换浅色、深色和窄窗口。预览入口不会出现在发布包中。
 

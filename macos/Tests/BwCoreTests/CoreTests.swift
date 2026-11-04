@@ -27,11 +27,17 @@ final class CoreTests: XCTestCase {
         try store.save(account, name: "account")
         let initial = try Vault(store: store, settings: Settings(), transient: true)
         try await initial.unlock(password: "fixture"); try await initial.setPIN("123456")
+        var stalePreferences = initial.settings
+        stalePreferences.pinEnabled = false; stalePreferences.pinRequiresPrimaryUnlockAfterRestart = false
+        let recovered = try Vault(store: store, settings: stalePreferences, transient: true)
+        XCTAssertTrue(recovered.settings.pinEnabled); XCTAssertTrue(recovered.pinAvailable)
+        try await recovered.unlockPIN("123456"); recovered.lock()
         var settings = initial.settings
         let required = try Vault(store: store, settings: settings, transient: true)
         do { try await required.unlockPIN("123456"); XCTFail("Default policy must require primary unlock after restart") } catch {}
-        XCTAssertFalse(required.unlocked)
+        XCTAssertFalse(required.unlocked); XCTAssertFalse(required.pinAvailable)
         try await required.unlock(password: "fixture"); required.lock()
+        XCTAssertTrue(required.pinAvailable)
         try await required.unlockPIN("123456"); XCTAssertTrue(required.unlocked)
         settings.pinRequiresPrimaryUnlockAfterRestart = false
         let direct = try Vault(store: store, settings: settings, transient: true)
@@ -49,7 +55,7 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("pin.sealed").path))
         let exhausted = try Vault(store: store, settings: settings, transient: true)
         do { try await exhausted.unlockPIN("123456"); XCTFail("Five failures across restarts must clear the PIN") } catch {}
-        XCTAssertFalse(exhausted.unlocked)
+        XCTAssertFalse(exhausted.unlocked); XCTAssertFalse(exhausted.settings.pinEnabled); XCTAssertFalse(exhausted.pinAvailable)
     }
     func testNotificationActionsRespectLockAndForwarding() throws {
         let identity = PublicIdentity(id: "fixture", name: "Fixture", blob: Data([1]), type: "ssh-ed25519")

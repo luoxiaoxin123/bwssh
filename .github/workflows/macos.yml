@@ -13,7 +13,7 @@ on:
     inputs:
       version:
         description: Package version
-        default: "1.0.4"
+        default: "1.0.5"
         required: true
         type: string
 
@@ -52,7 +52,7 @@ jobs:
         run: python3 macos/check-on-demand.py
       - name: Build native application, ZIP and DMG
         env:
-          PACKAGE_VERSION: ${{ inputs.version || '1.0.4' }}
+          PACKAGE_VERSION: ${{ inputs.version || '1.0.5' }}
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: python3 macos/package.py --arch "$PACKAGE_ARCH" --version "$PACKAGE_VERSION"
       - name: Upload packages

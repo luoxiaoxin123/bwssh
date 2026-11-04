@@ -196,19 +196,32 @@ struct UnlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !standalone { Label(tr("密码库已锁定", "Vault locked"), systemImage: "lock.fill").font(.headline) }
-            RevealPasswordField(pinMode ? "PIN" : tr("主密码", "Master password"), text: $password).textFieldStyle(.roundedBorder).onSubmit(unlock)
+            if vault.pinAvailable {
+                Picker(tr("解锁方式", "Unlock method"), selection: $pinMode) {
+                    Text("PIN").tag(true)
+                    Text(tr("主密码", "Master password")).tag(false)
+                }.pickerStyle(.segmented).labelsHidden()
+            } else if vault.settings.pinEnabled {
+                Text(tr("本次启动需先用主密码或 Touch ID 解锁，之后可用 PIN。可在「设置 → 快速解锁」关闭此要求。", "Unlock once with your master password or Touch ID after this launch to use PIN. You can turn off this requirement in Settings → Quick unlock."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            RevealPasswordField(pinMode && vault.pinAvailable ? "PIN" : tr("主密码", "Master password"), text: $password).textFieldStyle(.roundedBorder).onSubmit(unlock)
             HStack {
                 Button(tr("解锁", "Unlock"), action: unlock).buttonStyle(.borderedProminent).disabled(vault.busy || password.isEmpty)
                 if vault.settings.touchIDEnabled {
                     Button { vault.perform { try await vault.unlockTouchID(); onUnlocked() } } label: { Label("Touch ID", systemImage: "touchid") }.disabled(vault.busy)
                 }
-                if vault.settings.pinEnabled { Button(pinMode ? tr("使用主密码", "Use password") : tr("使用 PIN", "Use PIN")) { pinMode.toggle(); password = "" } }
+                if vault.busy { ProgressView().controlSize(.small) }
             }
-        }.padding(standalone ? 0 : 16).background(standalone ? Color.clear : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        }.padding(standalone ? 0 : 14).background(standalone ? Color.clear : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .onAppear { pinMode = vault.pinAvailable }
+        .onChange(of: vault.pinAvailable) { available in pinMode = available; password = "" }
+        .onChange(of: pinMode) { _ in password = "" }
     }
     private func unlock() {
+        let usePIN = pinMode && vault.pinAvailable
         vault.perform {
-            if pinMode { try await vault.unlockPIN(password) } else { try await vault.unlock(password: password) }
+            if usePIN { try await vault.unlockPIN(password) } else { try await vault.unlock(password: password) }
             password = ""; onUnlocked()
         }
     }
@@ -567,41 +580,81 @@ struct SettingsView: View {
 
 @MainActor final class ApprovalNotice: ObservableObject { @Published var text = "" }
 
+private struct ApprovalSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
 struct ApprovalsView: View {
     @ObservedObject var vault: Vault
     @ObservedObject var agent: Agent
     @ObservedObject var notice: ApprovalNotice
+    var onResize: (CGSize) -> Void = { _ in }
+    @State private var selectedID: UUID?
+    private var index: Int { agent.pending.firstIndex(where: { $0.id == selectedID }) ?? 0 }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if !notice.text.isEmpty { Text(notice.text).font(.caption).foregroundStyle(.secondary) }
-                ForEach(agent.pending) { request in
-                    VStack(alignment: .leading, spacing: 14) {
-                        Label(request.context?.operation ?? tr("解锁密码库", "Unlock vault"), systemImage: "key.fill").font(.title2.bold())
-                        if let key = request.identity { Text(key.name).font(.headline); Text(key.fingerprint).font(.system(.caption2, design: .monospaced)).textSelection(.enabled) }
-                        Text(request.process.isEmpty ? tr("未知程序", "Unknown process") : request.process).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                        if let destination = request.destination { LabeledContent(tr("目标（来自命令行）", "Destination (command line)"), value: destination) }
-                        if let host = request.context?.host { Text(tr("已验证主机密钥：", "Verified host key: ") + host).font(.caption).textSelection(.enabled) }
-                        else if request.context != nil { Text(tr("此请求没有已验证的目标主机信息。", "This request has no verified destination host.")).font(.caption).foregroundStyle(.secondary) }
-                        if request.context?.forwarded == true { Label(tr("转发请求：不授予程序限时权限", "Forwarded request: process grants are disabled"), systemImage: "network").font(.caption) }
-                        if !vault.unlocked {
-                            UnlockView(vault: vault) { agent.resolve(request.id, choice: .approve) }
-                            if !vault.message.isEmpty { Text(vault.message).font(.caption).foregroundStyle(.orange) }
-                        }
-                        HStack {
-                            Button(tr("拒绝", "Deny"), role: .destructive) { agent.resolve(request.id, choice: .deny) }
-                            Spacer()
-                            if vault.unlocked {
-                                if request.allowsTemporaryGrant {
-                                    Button("\(vault.settings.grantMinutes) " + tr("分钟内放行", "min allow")) { agent.resolve(request.id, choice: .grant) }
-                                }
-                                Button(tr("批准", "Approve")) { agent.resolve(request.id, choice: .approve) }.buttonStyle(.borderedProminent)
-                            }
-                        }
-                    }.padding(18).background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: .leading, spacing: 14) {
+            if !notice.text.isEmpty { Text(notice.text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            if agent.pending.count > 1 {
+                HStack {
+                    Text(tr("待审批", "Pending") + " \(index + 1) / \(agent.pending.count)").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { select(-1) } label: { Image(systemName: "chevron.left") }.disabled(index == 0).help(tr("上一个请求", "Previous request"))
+                    Button { select(1) } label: { Image(systemName: "chevron.right") }.disabled(index + 1 == agent.pending.count).help(tr("下一个请求", "Next request"))
                 }
-                if agent.pending.isEmpty { Text(tr("没有待审批的请求", "No pending requests")).foregroundStyle(.secondary) }
-            }.padding(18)
-        }.frame(width: 440, height: vault.unlocked ? 300 : 390)
+            }
+            if !agent.pending.isEmpty {
+                requestView(agent.pending[index]).id(agent.pending[index].id)
+            } else { Text(tr("没有待审批的请求", "No pending requests")).foregroundStyle(.secondary) }
+        }
+        .padding(20).frame(width: 500).fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { proxy in Color.clear.preference(key: ApprovalSizeKey.self, value: proxy.size) })
+        .onPreferenceChange(ApprovalSizeKey.self, perform: onResize)
+    }
+    private func select(_ offset: Int) {
+        let next = index + offset
+        if agent.pending.indices.contains(next) { selectedID = agent.pending[next].id }
+    }
+    private func requestView(_ request: PendingApproval) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(request.context?.operation ?? tr("解锁密码库", "Unlock vault"), systemImage: "key.fill").font(.headline)
+            if let key = request.identity {
+                Text(key.name).font(.headline).lineLimit(2).help(key.name)
+                Text(key.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            Text(request.process.isEmpty ? tr("未知程序", "Unknown process") : request.process)
+                .font(.callout).lineLimit(3).help(request.process).textSelection(.enabled)
+            if let destination = request.destination {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("目标（来自命令行）", "Destination (command line)")).font(.caption).foregroundStyle(.secondary)
+                    Text(destination).font(.callout).lineLimit(3).help(destination).textSelection(.enabled)
+                }
+            }
+            if let host = request.context?.host {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("已验证主机密钥", "Verified host key")).font(.caption).foregroundStyle(.secondary)
+                    Text(host).font(.system(.caption, design: .monospaced)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+            } else if request.context != nil {
+                Text(tr("此请求没有已验证的目标主机信息。", "This request has no verified destination host.")).font(.caption).foregroundStyle(.secondary)
+            }
+            if request.context?.forwarded == true { Label(tr("转发请求：不提供临时放行", "Forwarded request: temporary grants unavailable"), systemImage: "network").font(.caption) }
+            if !vault.unlocked {
+                UnlockView(vault: vault) { agent.resolve(request.id, choice: .approve) }
+                if !vault.message.isEmpty { Text(vault.message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            }
+            Divider()
+            HStack {
+                Button(tr("拒绝", "Deny"), role: .destructive) { agent.resolve(request.id, choice: .deny) }
+                Spacer()
+                if vault.unlocked {
+                    if request.allowsTemporaryGrant {
+                        Button("\(vault.settings.grantMinutes) " + tr("分钟内放行", "min allow")) { agent.resolve(request.id, choice: .grant) }
+                    }
+                    Button(tr("批准", "Approve")) { agent.resolve(request.id, choice: .approve) }.buttonStyle(.borderedProminent)
+                }
+            }
+        }
     }
 }

@@ -24,7 +24,11 @@ import BwCore
     try store.save(account, name: "account")
     let vault = try Vault(store: store, settings: Settings(), transient: true)
     try await vault.unlock(password: "preview")
-    if state == "locked" { vault.lock() }
+    if state == "approval-pin" {
+        vault.settings.pinRequiresPrimaryUnlockAfterRestart = false
+        try await vault.setPIN("123456")
+    }
+    if state == "locked" || state.hasPrefix("approval-") { vault.lock() }
     let agent = try Agent(vault: vault, store: store); agent.status = tr("Agent 正在监听", "Agent listening")
     return (vault, agent, directory)
 }
