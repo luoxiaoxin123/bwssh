@@ -47,7 +47,7 @@ https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
 
 在 [Releases](https://github.com/luoxiaoxin123/bwssh/releases) 页面下载 `bwssh-setup-x.y.z.exe` 并运行。安装不需要管理员权限。
 
-系统要求：Windows 10 2004（19041）或更高版本，x64。安装包没有代码签名，首次运行时 SmartScreen 可能会提示，点“更多信息 → 仍要运行”即可。
+系统要求：Windows 10 2004（19041）或更高版本，x64 或 ARM64。安装包没有代码签名，首次运行时 SmartScreen 可能会提示，点“更多信息 → 仍要运行”即可。
 
 ### macOS
 

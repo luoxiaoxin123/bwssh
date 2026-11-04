@@ -11,6 +11,15 @@
   #define OutputDir "..\artifacts\installer"
 #endif
 
+#ifndef AppArchitecture
+  #define AppArchitecture "x64"
+#endif
+#if AppArchitecture == "arm64"
+  #define AllowedArchitecture "arm64"
+#else
+  #define AllowedArchitecture "x64compatible"
+#endif
+
 #define AppName "bwssh"
 #define AppExe "bwssh.exe"
 
@@ -26,11 +35,11 @@ DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#AllowedArchitecture}
+ArchitecturesInstallIn64BitMode={#AllowedArchitecture}
 MinVersion=10.0.19041
 OutputDir={#OutputDir}
-OutputBaseFilename=bwssh-setup-{#AppVersion}
+OutputBaseFilename=bwssh-setup-{#AppVersion}-{#AppArchitecture}
 SetupIconFile=..\src\BwSshAgent.App\Assets\app.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}

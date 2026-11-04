@@ -47,7 +47,7 @@ The demos below show the Windows version. The macOS version uses native macOS wi
 
 Download `bwssh-setup-x.y.z.exe` from [Releases](https://github.com/luoxiaoxin123/bwssh/releases) and run it. No administrator rights are needed.
 
-Requirements: Windows 10 2004 (19041) or later, x64. The installer is not code-signed, so SmartScreen may warn on first run. Choose "More info → Run anyway".
+Requirements: Windows 10 2004 (19041) or later, x64 or ARM64. The installer is not code-signed, so SmartScreen may warn on first run. Choose "More info → Run anyway".
 
 ### macOS
 
