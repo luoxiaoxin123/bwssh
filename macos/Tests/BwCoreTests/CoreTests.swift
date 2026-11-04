@@ -239,8 +239,8 @@ final class CoreTests: XCTestCase {
     }
     func testPEMAndPKCS8Imports() throws {
         let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
-        for (type, bits) in [("rsa", 2048), ("ecdsa", 384)] {
-            let path = directory.appendingPathComponent(type)
+        for (type, bits) in [("rsa", 2048), ("ecdsa", 256), ("ecdsa", 384), ("ecdsa", 521)] {
+            let path = directory.appendingPathComponent("\(type)-\(bits)")
             try run("/usr/bin/ssh-keygen", ["-q", "-t", type, "-b", String(bits), "-m", "PEM", "-N", "", "-f", path.path])
             let plain = try SSHKey.parse(String(contentsOf: path, encoding: .utf8))
             let pkcs8 = directory.appendingPathComponent(type + ".pkcs8")
@@ -248,6 +248,33 @@ final class CoreTests: XCTestCase {
             XCTAssertEqual(try SSHKey.parse(String(contentsOf: pkcs8, encoding: .utf8)).publicBlob, plain.publicBlob)
             try run("/usr/bin/openssl", ["pkcs8", "-topk8", "-v2", "aes-256-cbc", "-in", path.path, "-out", pkcs8.path, "-passout", "pass:fixture-password"])
             XCTAssertEqual(try SSHKey.parse(String(contentsOf: pkcs8, encoding: .utf8), passphrase: "fixture-password").publicBlob, plain.publicBlob)
+        }
+    }
+    func testECImportsNormalizeShortScalars() throws {
+        for (curve, size) in [(Data([0x2a,0x86,0x48,0xce,0x3d,3,1,7]), 32),
+                              (Data([0x2b,0x81,4,0,0x22]), 48), (Data([0x2b,0x81,4,0,0x23]), 66)] {
+            func pem(_ label: String, _ encoded: Data) -> String {
+                "-----BEGIN \(label)-----\n" + encoded.base64EncodedString() + "\n-----END \(label)-----"
+            }
+            func sec1(_ scalar: Data) -> Data {
+                DER.sequence(DER.integer(Data([1])), DER.wrap(4, scalar), DER.wrap(0xa0, DER.wrap(6, curve)))
+            }
+            let full = Data(repeating: 0, count: size - 1) + Data([1])
+            let expected = try SSHKey.parse(pem("EC PRIVATE KEY", sec1(full)))
+            for width in [1, size - 1, size] {
+                let scalar = Data(full.suffix(width)), encoded = sec1(scalar)
+                let pkcs8 = DER.sequence(DER.integer(Data([0])),
+                    DER.sequence(DER.wrap(6, Data([0x2a,0x86,0x48,0xce,0x3d,2,1])), DER.wrap(6, curve)), DER.wrap(4, encoded))
+                for key in [try SSHKey.parse(pem("EC PRIVATE KEY", encoded)), try SSHKey.parse(pem("PRIVATE KEY", pkcs8))] {
+                    XCTAssertEqual(key.publicBlob, expected.publicBlob)
+                    let message = Data("short scalar regression".utf8)
+                    XCTAssertTrue(SSHKey.verify(publicBlob: expected.publicBlob, signature: try key.sign(message, flags: 0), data: message))
+                    XCTAssertEqual(try SSHKey.parse(key.exportOpenSSH()).publicBlob, expected.publicBlob)
+                }
+            }
+            for invalid in [Data(), Data(repeating: 0, count: size), Data(repeating: 0xff, count: size), Data(repeating: 1, count: size + 1)] {
+                XCTAssertThrowsError(try SSHKey.parse(pem("EC PRIVATE KEY", sec1(invalid))))
+            }
         }
     }
     func testSessionBindRejectsTamperingAndUnknownSession() async throws {
