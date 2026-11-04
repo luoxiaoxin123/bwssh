@@ -1,47 +1,99 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
+import LocalAuthentication
 import BwCore
+
+extension Notification.Name {
+    static let bwsshOpenSettings = Notification.Name("bwssh.openSettings")
+    static let bwsshPageChanged = Notification.Name("bwssh.pageChanged")
+    static let bwsshSearch = Notification.Name("bwssh.search")
+    static let bwsshAddKey = Notification.Name("bwssh.addKey")
+    static let bwsshClearAudit = Notification.Name("bwssh.clearAudit")
+    static let bwsshToggleSidebar = Notification.Name("bwssh.toggleSidebar")
+}
+
+struct InlineMessage: View {
+    let text: String
+    var dismiss: () -> Void
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+            Text(text).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: dismiss) { Image(systemName: "xmark") }.buttonStyle(.plain)
+                .help(tr("关闭提示", "Dismiss message")).accessibilityLabel(tr("关闭提示", "Dismiss message"))
+        }.padding(12).background(Color(nsColor: .controlBackgroundColor))
+        Divider()
+    }
+}
 
 struct MainView: View {
     @ObservedObject var vault: Vault
     @ObservedObject var agent: Agent
-    @State private var selection = "keys"
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Label(tr("SSH 密钥", "SSH keys"), systemImage: "key").tag("keys")
-                Label(tr("审计日志", "Audit log"), systemImage: "list.bullet.rectangle").tag("audit")
-                Label(tr("诊断", "Diagnostics"), systemImage: "stethoscope").tag("diagnostics")
-                Label(tr("设置", "Settings"), systemImage: "gearshape").tag("settings")
-            }
-            .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label(vault.unlocked ? tr("已解锁", "Unlocked") : tr("已锁定", "Locked"), systemImage: vault.unlocked ? "lock.open" : "lock")
-                    if let account = vault.account { Text(account.email).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                }.padding().frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 195, max: 250)
-        } detail: {
-            VStack(spacing: 0) {
-                if !vault.message.isEmpty {
-                    HStack { Image(systemName: "exclamationmark.triangle"); Text(vault.message).textSelection(.enabled); Spacer(); Button { vault.message = "" } label: { Image(systemName: "xmark") }.buttonStyle(.plain) }
-                        .font(.callout).padding(12).background(Color.orange.opacity(0.12))
-                }
-                if vault.account == nil { LoginView(vault: vault) }
-                else {
-                    switch selection {
-                    case "audit": AuditView(agent: agent)
-                    case "diagnostics": DiagnosticsView(vault: vault, agent: agent)
-                    case "settings": SettingsView(vault: vault)
-                    default: KeysView(vault: vault, agent: agent)
-                    }
-                }
-            }
-            .overlay(alignment: .topTrailing) { if vault.busy { ProgressView().controlSize(.small).padding() } }
+    @State private var selection: String? = "keys"
+    @State private var visibility = NavigationSplitViewVisibility.all
+    private var title: String {
+        switch selection {
+        case "audit": return tr("审计日志", "Audit log")
+        case "diagnostics": return tr("连接与诊断", "Connections")
+        default: return tr("SSH 密钥", "SSH keys")
         }
-        .frame(minWidth: 720, minHeight: 500)
+    }
+    var body: some View {
+        GeometryReader { geometry in
+          Group {
+            if vault.account == nil {
+                VStack(spacing: 0) {
+                    if !vault.message.isEmpty { InlineMessage(text: vault.message) { vault.message = "" } }
+                    LoginView(vault: vault)
+                }.navigationTitle("bwssh")
+            } else {
+                NavigationSplitView(columnVisibility: $visibility) {
+                    List(selection: $selection) {
+                        Section(tr("密码库", "Vault")) {
+                            Label(tr("SSH 密钥", "SSH keys"), systemImage: "key.horizontal").badge(vault.identities.count).tag("keys")
+                            Label(tr("审计日志", "Audit log"), systemImage: "clock.arrow.circlepath").tag("audit")
+                        }
+                        Section(tr("工具", "Tools")) {
+                            Label(tr("连接与诊断", "Connections"), systemImage: "network").tag("diagnostics")
+                        }
+                    }.listStyle(.sidebar)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Divider()
+                            HStack(spacing: 8) {
+                                Image(systemName: vault.unlocked ? "lock.open" : "lock")
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(vault.unlocked ? tr("密码库已解锁", "Vault unlocked") : tr("密码库已锁定", "Vault locked")).font(.callout)
+                                    Text(vault.account?.email ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                                }
+                                Spacer(minLength: 0)
+                                Button { NotificationCenter.default.post(name: .bwsshOpenSettings, object: nil) } label: { Image(systemName: "gearshape") }
+                                    .buttonStyle(.plain).help(tr("设置…", "Settings…")).accessibilityLabel(tr("设置", "Settings"))
+                            }.padding(.bottom, 12)
+                        }.padding(.horizontal, 14)
+                    }
+                    .navigationTitle("bwssh")
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 270)
+                } detail: {
+                    VStack(spacing: 0) {
+                        if !vault.message.isEmpty { InlineMessage(text: vault.message) { vault.message = "" } }
+                        switch selection {
+                        case "audit": AuditView(agent: agent)
+                        case "diagnostics": DiagnosticsView(vault: vault, agent: agent)
+                        default: KeysView(vault: vault, agent: agent)
+                        }
+                    }.navigationTitle(title)
+                }
+            }
+          }.frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .frame(minWidth: 740, minHeight: 480)
+        .onAppear { NotificationCenter.default.post(name: .bwsshPageChanged, object: vault.account == nil ? "login" : selection ?? "keys") }
+        .onChange(of: selection) { _ in NotificationCenter.default.post(name: .bwsshPageChanged, object: selection ?? "keys") }
+        .onChange(of: vault.account == nil) { loggedOut in NotificationCenter.default.post(name: .bwsshPageChanged, object: loggedOut ? "login" : selection ?? "keys") }
+        .onReceive(NotificationCenter.default.publisher(for: .bwsshToggleSidebar)) { _ in visibility = visibility == .detailOnly ? .all : .detailOnly }
     }
 }
 
@@ -61,36 +113,52 @@ struct LoginView: View {
     @State private var localMessage = ""
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Image(systemName: "key.horizontal.fill").font(.system(size: 38)).foregroundStyle(.tint)
-                Text(tr("连接你的密码库", "Connect your vault")).font(.largeTitle.bold())
-                Text(tr("从 Bitwarden 安全地使用 SSH 密钥。", "Use your SSH keys securely from Bitwarden.")).foregroundStyle(.secondary)
-                Picker(tr("服务器", "Server"), selection: $server) {
-                    Text("bitwarden.com").tag("https://bitwarden.com"); Text("bitwarden.eu").tag("https://bitwarden.eu"); Text(tr("自托管", "Self-hosted")).tag("custom")
-                }
-                if server == "custom" { TextField("https://vault.example.com", text: $custom) }
-                TextField(tr("邮箱", "Email"), text: $email)
-                SecureField(tr("主密码", "Master password"), text: $password).onSubmit(login)
-                Toggle(tr("使用 API Key 登录", "Sign in with API key"), isOn: $apiKey)
-                if apiKey {
-                    TextField("client_id (user.…)", text: $clientID); SecureField("client_secret", text: $clientSecret)
-                    Text(tr("主密码用于在本机解密密码库。", "The master password decrypts the vault locally.")).font(.caption).foregroundStyle(.secondary)
-                }
-                if let challenge {
-                    if challenge.newDevice { TextField(tr("新设备邮件验证码", "New-device email code"), text: $otp) }
-                    else {
-                        Picker(tr("两步验证", "Two-factor method"), selection: $provider) {
-                            ForEach(challenge.providers.filter { [0, 1, 3].contains($0) }, id: \.self) { p in Text(p == 0 ? tr("验证器", "Authenticator") : p == 1 ? tr("邮件", "Email") : "YubiKey OTP").tag(p) }
+            VStack(spacing: 22) {
+                VStack(spacing: 10) {
+                    Image(systemName: "key.horizontal").font(.system(size: 42, weight: .light)).foregroundStyle(.tint)
+                    Text(tr("登录 Bitwarden", "Sign in to Bitwarden")).font(.title2.weight(.semibold))
+                    Text(tr("将密码库中的 SSH 密钥连接到此 Mac。", "Connect your vault’s SSH keys to this Mac.")).font(.callout).foregroundStyle(.secondary)
+                }.padding(.top, 30)
+                Form {
+                    Section {
+                        Picker(tr("服务器", "Server"), selection: $server) {
+                            Text("bitwarden.com").tag("https://bitwarden.com"); Text("bitwarden.eu").tag("https://bitwarden.eu"); Text(tr("自托管", "Self-hosted")).tag("custom")
                         }
-                        TextField(tr("验证码", "Verification code"), text: $code)
-                        if provider == 1 { Button(tr("发送邮件验证码", "Send email code")) { sendEmail() } }
-                        if challenge.providers.allSatisfy({ ![0, 1, 3].contains($0) }) { Text(tr("该账户的两步验证方式暂不支持。请使用 API Key。", "This two-factor method is unsupported. Use an API key.")).foregroundStyle(.orange) }
+                        if server == "custom" { TextField(tr("服务器地址", "Server URL"), text: $custom, prompt: Text("https://vault.example.com")) }
+                        TextField(tr("邮箱", "Email"), text: $email, prompt: Text("you@example.com"))
+                        SecureField(tr("主密码", "Master password"), text: $password).onSubmit(login)
                     }
+                    Section {
+                        Toggle(tr("使用 API Key 登录", "Sign in with API key"), isOn: $apiKey)
+                        if apiKey { TextField("Client ID", text: $clientID); SecureField("Client secret", text: $clientSecret) }
+                    } footer: {
+                        if apiKey { Text(tr("主密码仅用于在此 Mac 上解密密码库。", "Your master password decrypts the vault on this Mac.")) }
+                    }
+                    if let challenge {
+                        Section(tr("验证身份", "Verify your identity")) {
+                            if challenge.newDevice { TextField(tr("设备验证码", "Device code"), text: $otp) }
+                            else {
+                                Picker(tr("验证方式", "Method"), selection: $provider) {
+                                    ForEach(challenge.providers.filter { [0, 1, 3].contains($0) }, id: \.self) { p in
+                                        Text(p == 0 ? tr("验证器", "Authenticator") : p == 1 ? tr("邮件", "Email") : "YubiKey OTP").tag(p)
+                                    }
+                                }
+                                TextField(tr("验证码", "Verification code"), text: $code)
+                                if provider == 1 { Button(tr("发送邮件验证码", "Send email code")) { sendEmail() } }
+                                if challenge.providers.allSatisfy({ ![0, 1, 3].contains($0) }) { Text(tr("该验证方式暂不支持。请使用 API Key。", "This method is unsupported. Use an API key.")).foregroundStyle(.orange) }
+                            }
+                        }
+                    }
+                }.formStyle(.grouped).textFieldStyle(.roundedBorder).fixedSize(horizontal: false, vertical: true)
+                if !localMessage.isEmpty { Text(localMessage).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
+                HStack(spacing: 8) {
+                    if vault.busy { ProgressView().controlSize(.small) }
+                    Button(tr("登录并解锁", "Sign in and unlock"), action: login).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .disabled(vault.busy || email.isEmpty || password.isEmpty)
                 }
-                if !localMessage.isEmpty { Text(localMessage).foregroundStyle(.orange).textSelection(.enabled) }
-                Button(tr("登录并解锁", "Sign in and unlock"), action: login).buttonStyle(.borderedProminent).controlSize(.large).disabled(vault.busy || email.isEmpty || password.isEmpty)
-            }.textFieldStyle(.roundedBorder).padding(40).frame(maxWidth: 520)
-        }.frame(maxWidth: .infinity)
+                Text(tr("主密码不会保存在此 Mac 上。", "Your master password isn’t saved on this Mac.")).font(.caption).foregroundStyle(.secondary)
+            }.padding(.horizontal, 24).padding(.bottom, 32).frame(maxWidth: 500).frame(maxWidth: .infinity)
+        }.background(Color(nsColor: .windowBackgroundColor))
     }
     private func login() {
         vault.perform {
@@ -142,43 +210,77 @@ struct KeysView: View {
     @State private var renameID: String?
     @State private var renameName = ""
     @State private var deleting: PublicIdentity?
+    @State private var selectedID: String?
+    @State private var query = ""
+    private var filtered: [PublicIdentity] {
+        vault.identities.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.type.localizedCaseInsensitiveContains(query) || $0.fingerprint.localizedCaseInsensitiveContains(query) }
+    }
+    private var selected: PublicIdentity? { vault.identities.first { $0.id == selectedID } }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text(tr("SSH 密钥", "SSH keys")).font(.largeTitle.bold()); Spacer()
-                Button { vault.perform { try await vault.sync() } } label: { Image(systemName: "arrow.clockwise") }.help(tr("同步", "Sync")).disabled(vault.busy)
-                if vault.unlocked { Button { vault.lock() } label: { Image(systemName: "lock") } }
-                Button { adding = true } label: { Label(tr("添加密钥", "Add key"), systemImage: "plus") }.disabled(!vault.unlocked || vault.busy)
-            }
-            if !vault.unlocked { UnlockView(vault: vault) }
+        VStack(spacing: 0) {
+            if !vault.unlocked { UnlockView(vault: vault).padding(20) }
             if vault.identities.isEmpty {
-                VStack(spacing: 12) { Image(systemName: "key").font(.system(size: 42)).foregroundStyle(.secondary); Text(tr("密码库中还没有 SSH 密钥", "No SSH keys in this vault")); Text(tr("生成或导入密钥后即可连接。", "Generate or import a key to get started.")).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyContent(symbol: "key.horizontal", title: tr("尚无 SSH 密钥", "No SSH keys"), detail: tr("添加密钥，或同步 Bitwarden 密码库。", "Add a key or sync your Bitwarden vault.")) {
+                    Button(tr("添加密钥…", "Add key…")) { adding = true }.disabled(!vault.unlocked || vault.busy)
+                }
             } else {
-                List(vault.identities) { key in
-                    HStack(spacing: 12) {
-                        Image(systemName: "key.fill").foregroundStyle(.tint)
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(key.name).font(.headline)
-                            Text(key.type).font(.caption).foregroundStyle(.secondary)
-                            Text(key.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                        }
-                        Spacer()
-                        Menu {
-                            Button(tr("复制公钥", "Copy public key")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(key.publicLine, forType: .string) }
-                            Button(tr("重命名", "Rename")) { renameID = key.id; renameName = key.name }.disabled(!vault.unlocked)
-                            Button(tr("移到回收站", "Move to trash"), role: .destructive) { deleting = key }.disabled(!vault.unlocked)
-                        } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 28)
-                    }.padding(.vertical, 8)
-                }.listStyle(.inset)
+                Table(filtered, selection: $selectedID) {
+                    TableColumn(tr("名称", "Name")) { key in
+                        Label(key.name, systemImage: "key.horizontal").lineLimit(1)
+                            .contextMenu { keyMenu(key) }
+                    }.width(min: 160, ideal: 250)
+                    TableColumn(tr("算法", "Algorithm")) { key in Text(algorithm(key.type)).foregroundStyle(.secondary) }.width(min: 100, ideal: 120, max: 150)
+                    TableColumn(tr("指纹", "Fingerprint")) { key in
+                        Text(key.fingerprint).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }.width(min: 160, ideal: 240)
+                }
+                .frame(minHeight: 120, maxHeight: .infinity)
+                .tableStyle(.inset(alternatesRowBackgrounds: false))
+                .layoutPriority(-1)
+                .contextMenu {
+                    if let selected { keyMenu(selected) }
+                }
+                .overlay { if filtered.isEmpty { EmptyContent(symbol: "magnifyingglass", title: tr("没有匹配的密钥", "No matching keys"), detail: tr("尝试其他名称、算法或指纹。", "Try another name, algorithm or fingerprint.")) { EmptyView() }.allowsHitTesting(false) } }
+                Divider()
+                Group {
+                    if let selected {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "key.horizontal").font(.title2).foregroundStyle(.secondary).frame(width: 30, height: 32)
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack { Text(selected.name).font(.headline); Text(algorithm(selected.type)).font(.caption).foregroundStyle(.secondary) }
+                                Text(selected.fingerprint).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Button(tr("复制公钥", "Copy public key")) { copy(selected) }.controlSize(.small)
+                        }.padding(16)
+                    } else {
+                        Text(tr("选择一把密钥以查看详情", "Select a key to see its details")).font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    }
+                }.frame(height: 88).background(Color(nsColor: .windowBackgroundColor))
+
             }
             if !agent.grants.isEmpty {
-                GroupBox(tr("临时授权", "Temporary grants")) {
-                    ForEach(agent.grants) { grant in HStack { VStack(alignment: .leading) { Text(grant.name); Text(grant.expires, style: .time).foregroundStyle(.secondary) }; Spacer(); Button(tr("撤销", "Revoke")) { agent.revoke(grant.id) } }.font(.caption).padding(4) }
-                }
+                Divider()
+                DisclosureGroup(tr("临时授权", "Temporary grants") + " (\(agent.grants.count))") {
+                    ForEach(agent.grants) { grant in
+                        HStack { Text(grant.name).lineLimit(1); Spacer(); Text(grant.expires, style: .time).foregroundStyle(.secondary); Button(tr("撤销", "Revoke")) { agent.revoke(grant.id) } }.font(.caption).padding(.vertical, 3)
+                    }
+                }.padding(12)
             }
-            if !vault.errors.isEmpty { DisclosureGroup(tr("部分密钥无法加载", "Some keys could not be loaded")) { Text(vault.errors.joined(separator: "\n")).font(.caption).foregroundStyle(.orange).textSelection(.enabled) } }
-            if let time = vault.account?.syncedAt { Text(tr("上次同步：", "Last sync: ") + time.formatted()).font(.caption).foregroundStyle(.secondary) }
-        }.padding(24)
+            if !vault.errors.isEmpty {
+                DisclosureGroup(tr("部分密钥无法加载", "Some keys could not be loaded")) { Text(vault.errors.joined(separator: "\n")).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }.padding(12)
+            }
+            Divider()
+            HStack {
+                Text(tr("\(filtered.count) 把密钥", "\(filtered.count) keys"))
+                Spacer()
+                if vault.busy { ProgressView().controlSize(.mini); Text(tr("处理中…", "Working…")) }
+                else if let time = vault.account?.syncedAt { Text(tr("同步于 ", "Synced ") + time.formatted(date: .omitted, time: .shortened)) }
+            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 14).frame(height: 30)
+                .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .bwsshSearch)) { query = $0.object as? String ?? "" }
+        .onReceive(NotificationCenter.default.publisher(for: .bwsshAddKey)) { _ in if vault.unlocked && !vault.busy { adding = true } }
+        .onChange(of: vault.identities) { keys in if let selectedID, !keys.contains(where: { $0.id == selectedID }) { self.selectedID = nil } }
         .sheet(isPresented: $adding) { AddKeyView(vault: vault) }
         .alert(tr("重命名密钥", "Rename key"), isPresented: Binding(get: { renameID != nil }, set: { if !$0 { renameID = nil } })) {
             TextField(tr("名称", "Name"), text: $renameName)
@@ -188,6 +290,35 @@ struct KeysView: View {
         .confirmationDialog(tr("将密钥移到 Bitwarden 回收站？", "Move this key to the Bitwarden trash?"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button(tr("移到回收站", "Move to trash"), role: .destructive) { if let id = deleting?.id { vault.perform { try await vault.trash(id) } }; deleting = nil }
         }
+    }
+    @ViewBuilder private func keyMenu(_ key: PublicIdentity) -> some View {
+        Button(tr("复制公钥", "Copy public key")) { copy(key) }
+        Divider()
+        Button(tr("重命名…", "Rename…")) { renameID = key.id; renameName = key.name }.disabled(!vault.unlocked || vault.busy)
+        Button(tr("移到回收站…", "Move to trash…"), role: .destructive) { deleting = key }.disabled(!vault.unlocked || vault.busy)
+    }
+    private func copy(_ key: PublicIdentity) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(key.publicLine, forType: .string) }
+    private func algorithm(_ type: String) -> String {
+        switch type {
+        case "ssh-ed25519": return "Ed25519"
+        case "ssh-rsa": return "RSA"
+        default: return type.replacingOccurrences(of: "ecdsa-sha2-nistp", with: "ECDSA P-")
+        }
+    }
+}
+
+struct EmptyContent<Action: View>: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    @ViewBuilder var action: () -> Action
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 36, weight: .light)).foregroundStyle(.tertiary).padding(.bottom, 4)
+            Text(title).font(.headline)
+            Text(detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            action().padding(.top, 6)
+        }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -209,10 +340,10 @@ struct AddKeyView: View {
             }
             if !vault.message.isEmpty { Text(vault.message).foregroundStyle(.orange).font(.caption) }
             HStack {
-                Spacer(); Button(tr("取消", "Cancel")) { dismiss() }
+                Spacer(); Button(tr("取消", "Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(tr("保存到密码库", "Save to vault")) {
                     vault.perform { try await vault.add(name: name, pem: pem, passphrase: passphrase, rsa: kind == "import" ? nil : kind == "rsa"); pem = ""; passphrase = ""; dismiss() }
-                }.buttonStyle(.borderedProminent).disabled(vault.busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (kind == "import" && pem.isEmpty))
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(vault.busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (kind == "import" && pem.isEmpty))
             }
         }.padding(24).frame(width: 520)
         .onDisappear { pem = ""; passphrase = "" }
@@ -227,19 +358,46 @@ struct AuditView: View {
     @ObservedObject var agent: Agent
     @State private var query = ""
     @State private var confirming = false
+    @State private var selectedID: UUID?
+    private var filtered: [AuditEntry] {
+        agent.audit.filter { query.isEmpty || "\($0.process) \($0.key) \($0.destination ?? "") \($0.host ?? "") \($0.decision)".localizedCaseInsensitiveContains(query) }
+    }
+    private var selected: AuditEntry? { agent.audit.first { $0.id == selectedID } }
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack { Text(tr("审计日志", "Audit log")).font(.largeTitle.bold()); Spacer(); Button(tr("清空", "Clear")) { confirming = true } }
-            TextField(tr("筛选程序、主机、密钥或结果", "Filter by process, host, key or decision"), text: $query).textFieldStyle(.roundedBorder)
-            List(agent.audit.filter { query.isEmpty || "\($0.process) \($0.key) \($0.destination ?? "") \($0.host ?? "") \($0.decision)".localizedCaseInsensitiveContains(query) }) { entry in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack { Text(entry.key).bold(); Text(entry.operation).foregroundStyle(.secondary); Spacer(); Text(entry.decision).font(.caption) }
-                    Text(entry.process + " · PID \(entry.pid)").font(.system(.caption, design: .monospaced))
-                    HStack { Text(entry.time.formatted()); if let destination = entry.destination { Text(destination) }; if entry.forwarded { Text(tr("转发请求", "Forwarded")) } }.font(.caption).foregroundStyle(.secondary)
-                    if let host = entry.host { Text(host).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary) }
-                }.textSelection(.enabled).padding(.vertical, 6)
-            }.listStyle(.inset)
-        }.padding(24)
+        VStack(spacing: 0) {
+            if agent.audit.isEmpty {
+                EmptyContent(symbol: "clock.arrow.circlepath", title: tr("暂无使用记录", "No activity yet"), detail: tr("密钥签名的请求与审批结果会显示在这里。", "Key requests and approval decisions appear here.")) { EmptyView() }
+            } else {
+                Table(filtered, selection: $selectedID) {
+                    TableColumn(tr("时间", "Time")) { entry in Text(entry.time.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary) }.width(min: 120, ideal: 145, max: 170)
+                    TableColumn(tr("密钥", "Key"), value: \.key).width(min: 100, ideal: 140)
+                    TableColumn(tr("操作", "Operation"), value: \.operation).width(min: 90, ideal: 120)
+                    TableColumn(tr("结果", "Decision")) { entry in Text(entry.decision).lineLimit(1).help(entry.decision) }.width(min: 100, ideal: 160)
+                }.tableStyle(.inset(alternatesRowBackgrounds: false)).frame(minHeight: 120, maxHeight: .infinity).layoutPriority(-1)
+                Divider()
+                Group {
+                    if let selected {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(selected.process).font(.system(.callout, design: .monospaced)).textSelection(.enabled).lineLimit(2)
+                            HStack {
+                                Text("PID \(selected.pid)")
+                                if let destination = selected.destination { Text(destination) }
+                                if selected.forwarded { Label(tr("转发", "Forwarded"), systemImage: "network") }
+                            }.font(.caption).foregroundStyle(.secondary)
+                            if let host = selected.host { Text(host).font(.system(.caption, design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary).lineLimit(1) }
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    } else {
+                        Text(tr("选择记录以查看程序与主机详情", "Select an event to see process and host details")).font(.callout).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                    }
+                }.frame(height: 112).background(Color(nsColor: .windowBackgroundColor))
+
+            }
+            Divider()
+            HStack { Text(tr("\(filtered.count) 条记录", "\(filtered.count) events")); Spacer(); Text(tr("仅保存在此 Mac", "Stored on this Mac")) }
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 14).frame(height: 30).background(Color(nsColor: .windowBackgroundColor))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .bwsshSearch)) { query = $0.object as? String ?? "" }
+        .onReceive(NotificationCenter.default.publisher(for: .bwsshClearAudit)) { _ in if !agent.audit.isEmpty { confirming = true } }
         .confirmationDialog(tr("清空本机审计日志？", "Clear local audit history?"), isPresented: $confirming) {
             Button(tr("清空", "Clear"), role: .destructive) { do { try agent.clearAudit() } catch { agent.status = error.localizedDescription } }
         }
@@ -251,34 +409,44 @@ struct DiagnosticsView: View {
     @ObservedObject var agent: Agent
     @State private var result = ""
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text(tr("诊断", "Diagnostics")).font(.largeTitle.bold())
-                GroupBox("SSH agent") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(agent.status)
-                        Text(Paths.socket).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                        Button(tr("测试 ssh-add -L", "Test ssh-add -L"), action: test)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
+        Form {
+            Section {
+                LabeledContent("SSH agent") {
+                    Label(agent.status, systemImage: "circle.fill").font(.callout).symbolRenderingMode(.hierarchical)
                 }
-                GroupBox(tr("连接终端与 Git", "Connect terminal and Git")) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(tr("设置会在 ~/.ssh/config 开头加入 IdentityAgent，保留原配置并创建备份。", "Setup adds IdentityAgent at the start of ~/.ssh/config and creates a backup of the original file."))
-                        Button(tr("配置 SSH", "Configure SSH")) { setup(false) }
-                        Text("export SSH_AUTH_SOCK=" + SSHConfiguration.shellQuote(Paths.socket)).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                        Text(tr("将上面的 export 加到 ~/.zshrc（或当前 shell 配置），让 ssh-add 和 Git SSH 签名找到 agent。", "Add this export to ~/.zshrc (or your shell configuration) so ssh-add and Git SSH signing can find the agent.")).font(.caption).foregroundStyle(.secondary)
-                        Button(tr("复制环境变量", "Copy environment variable")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("export SSH_AUTH_SOCK=" + SSHConfiguration.shellQuote(Paths.socket), forType: .string) }
-                    }.padding(8)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(tr("Socket 路径", "Socket path")).font(.callout)
+                    Text(Paths.socket).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                GroupBox(tr("按需启动", "On-demand launch")) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(tr("执行 ssh、scp、sftp 或 git push 时自动启动 bwssh。ssh-add 与 Git 提交签名需要先打开应用。请先将应用移到 /Applications，移动后重新设置。", "Automatically launch bwssh for ssh, scp, sftp and git push. Open the app first for ssh-add and Git commit signing. Move the app to /Applications before setup; run setup again after moving it."))
-                        HStack { Button(tr("一键设置", "Set up")) { setup(true) }; Button(tr("撤销 SSH 配置", "Remove SSH configuration")) { do { try SSHConfiguration.uninstall(); result = tr("已撤销 bwssh 配置。", "Removed bwssh configuration.") } catch { result = error.localizedDescription } } }
-                    }.padding(8)
+                Button(tr("测试连接…", "Test connection…"), action: test)
+            } header: { Text(tr("连接状态", "Connection status")) }
+            Section {
+                LabeledContent(tr("SSH 与 Git 连接", "SSH and Git")) { Button(tr("配置 SSH…", "Configure SSH…")) { setup(false) } }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(tr("终端环境变量", "Terminal environment")).font(.callout)
+                        Spacer()
+                        Button(tr("复制", "Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString("export SSH_AUTH_SOCK=" + SSHConfiguration.shellQuote(Paths.socket), forType: .string) }.controlSize(.small)
+                    }
+                    Text("export SSH_AUTH_SOCK=" + SSHConfiguration.shellQuote(Paths.socket))
+                        .font(.system(.caption, design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                if !result.isEmpty { Text(result).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-            }.padding(24)
-        }
+            } header: { Text(tr("终端与 Git", "Terminal and Git")) } footer: {
+                Text(tr("配置会备份 ~/.ssh/config 并添加 IdentityAgent。将环境变量加入 ~/.zshrc，供 ssh-add 和 Git 提交签名使用。", "Setup backs up ~/.ssh/config and adds IdentityAgent. Add the environment variable to ~/.zshrc for ssh-add and Git commit signing.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            }
+            Section {
+                LabeledContent(tr("运行 SSH 时启动 bwssh", "Launch bwssh when using SSH")) { Button(tr("设置…", "Set up…")) { setup(true) } }
+                Button(tr("移除 bwssh 的 SSH 配置…", "Remove bwssh SSH configuration…")) {
+                    do { try SSHConfiguration.uninstall(); result = tr("已移除 bwssh 的 SSH 配置。", "Removed bwssh SSH configuration.") } catch { result = error.localizedDescription }
+                }
+            } header: { Text(tr("按需启动", "On-demand launch")) } footer: {
+                Text(tr("请先将应用移到“应用程序”。ssh、scp、sftp 和 git push 可自动启动应用；ssh-add 与 Git 提交签名需先手动打开。", "Move the app to Applications first. ssh, scp, sftp and git push can launch it automatically. Open the app first for ssh-add and Git commit signing.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            }
+            if !result.isEmpty {
+                Section(tr("测试与操作结果", "Results")) { Text(result).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+            }
+        }.formStyle(.grouped).frame(maxWidth: 720).frame(maxWidth: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
     }
     private func setup(_ onDemand: Bool) {
         do {
@@ -305,42 +473,84 @@ struct SettingsView: View {
     @State private var pin = ""
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var logout = false
+    private var supportsBiometry: Bool { LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) }
     var body: some View {
-        Form {
-            Section(tr("审批", "Approval")) {
-                Picker(tr("批准方式", "Prompt mode"), selection: $vault.settings.promptMode) {
-                    Text(tr("每次都询问", "Always ask")).tag("always")
-                    Text(tr("锁定前记住主机", "Remember host until lock")).tag("remember")
-                    Text(tr("从不询问", "Never ask")).tag("never")
+        VStack(spacing: 0) {
+            if !vault.message.isEmpty { InlineMessage(text: vault.message) { vault.message = "" } }
+            Form {
+                Section {
+                    Picker(tr("使用密钥时", "When using a key"), selection: $vault.settings.promptMode) {
+                        Text(tr("每次询问", "Always ask")).tag("always")
+                        Text(tr("锁定前记住主机", "Remember host until lock")).tag("remember")
+                        Text(tr("自动批准", "Approve automatically")).tag("never")
+                    }
+                    duration(tr("临时授权时长", "Temporary access"), value: $vault.settings.grantMinutes, range: 1...1440)
+                    LabeledContent(tr("等待审批", "Approval timeout")) {
+                        HStack(spacing: 8) {
+                            Text(tr("\(vault.settings.approvalTimeout) 秒", "\(vault.settings.approvalTimeout) seconds")).foregroundStyle(.secondary).monospacedDigit()
+                            Stepper("", value: $vault.settings.approvalTimeout, in: 15...300, step: 15).labelsHidden().fixedSize()
+                                .accessibilityLabel(tr("审批等待时间", "Approval timeout"))
+                        }
+                    }
+                } header: { Text(tr("密钥使用审批", "Key approval")) } footer: {
+                    Text(tr("临时授权仅适用于同一个程序会话；锁定密码库会撤销所有授权。", "Temporary access applies to one process session. Locking the vault revokes all access grants.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }
-                Stepper(tr("程序授权：", "Process grant: ") + "\(vault.settings.grantMinutes) min", value: $vault.settings.grantMinutes, in: 1...1440)
-                Stepper(tr("审批超时：", "Approval timeout: ") + "\(vault.settings.approvalTimeout) s", value: $vault.settings.approvalTimeout, in: 15...300, step: 15)
-            }
-            Section(tr("自动锁定与同步", "Lock and sync")) {
-                Stepper(tr("空闲自动锁定：", "Lock after idle: ") + "\(vault.settings.idleMinutes) min (0 = off)", value: $vault.settings.idleMinutes, in: 0...1440, step: 5)
-                Toggle(tr("锁屏时锁定", "Lock on screen lock"), isOn: $vault.settings.lockOnScreenLock)
-                Toggle(tr("睡眠时锁定", "Lock on sleep"), isOn: $vault.settings.lockOnSleep)
-                Stepper(tr("同步间隔：", "Sync interval: ") + "\(vault.settings.syncMinutes) min (0 = off)", value: $vault.settings.syncMinutes, in: 0...1440, step: 5)
-            }
-            Section(tr("快速解锁", "Quick unlock")) {
-                HStack {
-                    Label(vault.settings.touchIDEnabled ? tr("Touch ID 已开启", "Touch ID enabled") : tr("Touch ID 未开启", "Touch ID disabled"), systemImage: "touchid")
-                    Spacer(); Button(tr("开启 Touch ID", "Enable Touch ID")) { do { try vault.enableTouchID() } catch { vault.message = error.localizedDescription } }.disabled(!vault.unlocked)
+                Section {
+                    duration(tr("空闲后锁定", "Lock after idle"), value: $vault.settings.idleMinutes, range: 0...1440, step: 5)
+                    Toggle(tr("锁定屏幕时锁定密码库", "Lock vault when the screen locks"), isOn: $vault.settings.lockOnScreenLock)
+                    Toggle(tr("Mac 睡眠时锁定密码库", "Lock vault when Mac sleeps"), isOn: $vault.settings.lockOnSleep)
+                    duration(tr("自动同步间隔", "Sync interval"), value: $vault.settings.syncMinutes, range: 0...1440, step: 5)
+                } header: { Text(tr("锁定与同步", "Lock and sync")) }
+                Section {
+                    LabeledContent("Touch ID") {
+                        if supportsBiometry {
+                            if vault.settings.touchIDEnabled { Text(tr("已开启", "Enabled")).foregroundStyle(.secondary) }
+                            else { Button(tr("设置 Touch ID…", "Set up Touch ID…")) { do { try vault.enableTouchID() } catch { vault.message = error.localizedDescription } }.disabled(!vault.unlocked) }
+                        } else { Text(tr("此 Mac 不可用", "Unavailable on this Mac")).foregroundStyle(.secondary) }
+                    }
+                    LabeledContent("PIN") {
+                        HStack(spacing: 8) {
+                            SecureField("", text: $pin, prompt: Text(tr("至少 4 位", "At least 4 characters"))).labelsHidden().accessibilityLabel(tr("新 PIN", "New PIN")).frame(width: 145).textFieldStyle(.roundedBorder)
+                            Button(vault.settings.pinEnabled ? tr("更改…", "Change…") : tr("设置…", "Set up…")) { vault.perform { try await vault.setPIN(pin); pin = "" } }
+                                .disabled(!vault.unlocked || pin.count < 4 || vault.busy)
+                        }
+                    }
+                    if vault.settings.touchIDEnabled || vault.settings.pinEnabled {
+                        Button(tr("关闭快速解锁…", "Disable quick unlock…")) { do { try vault.disableQuickUnlock() } catch { vault.message = error.localizedDescription } }
+                    }
+                } header: { Text(tr("快速解锁", "Quick unlock")) } footer: {
+                    Text(tr("更改设置前请先解锁密码库。每次启动后先用主密码或 Touch ID 解锁一次，之后可用 PIN；连续输错 5 次会清除 PIN。", "Unlock the vault before setup. After each launch, unlock once with the master password or Touch ID before using PIN. Five failed attempts clear the PIN.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }
-                HStack { SecureField(tr("设置新 PIN（至少 4 位）", "New PIN (at least 4 characters)"), text: $pin); Button(tr("设置 PIN", "Set PIN")) { vault.perform { try await vault.setPIN(pin); pin = "" } }.disabled(!vault.unlocked || pin.count < 4 || vault.busy) }
-                Text(tr("PIN 连续输错 5 次后清除；每次启动后需先用主密码或 Touch ID 解锁。", "PIN is cleared after 5 failed attempts. Use the master password or Touch ID once after each app launch.")).font(.caption).foregroundStyle(.secondary)
-                Button(tr("关闭快速解锁", "Disable quick unlock")) { do { try vault.disableQuickUnlock() } catch { vault.message = error.localizedDescription } }
-            }
-            Section(tr("启动", "Startup")) {
-                Toggle(tr("登录 macOS 时启动", "Start at login"), isOn: $loginItem).onChange(of: loginItem) { enabled in
-                    do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
-                    catch { vault.message = error.localizedDescription; loginItem = SMAppService.mainApp.status == .enabled }
+                Section {
+                    Toggle(tr("登录 macOS 时打开 bwssh", "Open bwssh at login"), isOn: $loginItem).onChange(of: loginItem) { enabled in
+                        #if DEBUG
+                        if ProcessInfo.processInfo.environment["BWSSH_UI_PREVIEW"] == "1" || CommandLine.arguments.contains("--ui-preview") { return }
+                        #endif
+                        do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
+                        catch { vault.message = error.localizedDescription; loginItem = SMAppService.mainApp.status == .enabled }
+                    }
+                } header: { Text(tr("启动", "Startup")) }
+                if let account = vault.account {
+                    Section {
+                        LabeledContent(tr("账号", "Account"), value: account.email)
+                        LabeledContent(tr("服务器", "Server"), value: account.server.base)
+                        Button(tr("退出账号…", "Sign out…"), role: .destructive) { logout = true }
+                    } header: { Text(tr("Bitwarden 账号", "Bitwarden account")) }
                 }
-            }
-            Section { Button(tr("退出账号", "Sign out"), role: .destructive) { logout = true } }
-        }.formStyle(.grouped).onChange(of: vault.settings) { _ in vault.saveSettings() }
+            }.formStyle(.grouped)
+        }
+        .frame(maxWidth: 680).frame(maxWidth: .infinity).background(Color(nsColor: .windowBackgroundColor))
+        .onChange(of: vault.settings) { _ in vault.saveSettings() }
         .confirmationDialog(tr("退出账号并清除本机密码库？", "Sign out and remove the local vault?"), isPresented: $logout) {
             Button(tr("退出账号", "Sign out"), role: .destructive) { do { try vault.logout() } catch { vault.message = error.localizedDescription } }
+        }
+    }
+    private func duration(_ label: String, value: Binding<Int>, range: ClosedRange<Int>, step: Int = 1) -> some View {
+        LabeledContent(label) {
+            HStack(spacing: 8) {
+                Text(value.wrappedValue == 0 ? tr("关闭", "Off") : tr("\(value.wrappedValue) 分钟", "\(value.wrappedValue) minutes")).foregroundStyle(.secondary).monospacedDigit()
+                Stepper("", value: value, in: range, step: step).labelsHidden().fixedSize().accessibilityLabel(label)
+            }
         }
     }
 }

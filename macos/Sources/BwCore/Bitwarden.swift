@@ -45,6 +45,11 @@ public struct Account: Codable {
     public var syncedAt: Date
     public var apiClientID: String? = nil
     public var apiClientSecret: String? = nil
+    public init(server: Server, email: String, salt: String, kdf: KDF, accessToken: String, refreshToken: String? = nil, expires: Date, encryptedUserKey: String, userID: String, snapshot: Data, syncedAt: Date) {
+        self.server = server; self.email = email; self.salt = salt; self.kdf = kdf
+        self.accessToken = accessToken; self.refreshToken = refreshToken; self.expires = expires
+        self.encryptedUserKey = encryptedUserKey; self.userID = userID; self.snapshot = snapshot; self.syncedAt = syncedAt
+    }
 }
 
 public struct LoginChallenge: Error, LocalizedError {

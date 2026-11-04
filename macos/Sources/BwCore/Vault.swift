@@ -86,12 +86,15 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
     private var keys = [String: SSHKey]()
     private var pinWrappingKey: Secret?
     private var epoch = 0
-    public init(api: BitwardenAPI = BitwardenAPI(), store: LocalStore? = nil, settings: Settings = Settings.load()) throws {
+    private let transient: Bool
+    public init(api: BitwardenAPI = BitwardenAPI(), store: LocalStore? = nil, settings: Settings = Settings.load(), transient: Bool = false) throws {
         self.api = api; self.store = try store ?? LocalStore(); self.settings = settings
+        self.transient = transient
         account = try self.store.load(Account.self, name: "account")
         if account != nil { identities = try self.store.load([PublicIdentity].self, name: "public-keys") ?? [] }
     }
     public func saveSettings() {
+        guard !transient else { return }
         do { try settings.save() } catch { message = error.localizedDescription }
     }
     public func perform(_ action: @escaping () async throws -> Void) {
@@ -158,6 +161,7 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         return try key.sign(data, flags: flags)
     }
     public func enableTouchID() throws {
+        guard !transient else { throw BwError("Unavailable in UI preview") }
         guard let userKey else { throw BwError("Unlock first") }
         var error: NSError?; let context = LAContext()
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else { throw error ?? BwError("Touch ID is unavailable") as NSError }
@@ -165,6 +169,7 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         try Keychain.put(raw, name: "touch-id", biometric: true); settings.touchIDEnabled = true; try settings.save()
     }
     public func unlockTouchID() async throws {
+        guard !transient else { throw BwError("Unavailable in UI preview") }
         let generation = epoch
         let context = LAContext(); context.localizedReason = tr("解锁 bwssh 密码库", "Unlock the bwssh vault")
         let key = try await Task.detached { () throws -> Secret in
@@ -174,6 +179,7 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         try await unlock(key: key, generation: generation, restorePIN: true)
     }
     public func setPIN(_ pin: String) async throws {
+        guard !transient else { throw BwError("Unavailable in UI preview") }
         guard let userKey, pin.count >= 4, pin.count <= 128 else { throw BwError(tr("先解锁，PIN 至少 4 位。", "Unlock first. Use a PIN of at least 4 characters.")) }
         let salt = try Crypto.random(16)
         var derived = try await Task.detached { try Crypto.argon(Data(pin.utf8), salt: salt) }.value; defer { derived.wipe() }
@@ -184,6 +190,7 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         settings.pinEnabled = true; try settings.save()
     }
     public func unlockPIN(_ pin: String) async throws {
+        guard !transient else { throw BwError("Unavailable in UI preview") }
         guard pinWrappingKey != nil, settings.pinEnabled else { throw BwError(tr("本次启动后请先用主密码或 Touch ID 解锁一次。", "Use the master password or Touch ID once after starting the app.")) }
         guard var envelope = try store.load(PinEnvelope.self, name: "pin") else { throw BwError("PIN is not configured") }
         let generation = epoch
@@ -201,6 +208,7 @@ private struct PinEnvelope: Codable { var salt: Data; var encrypted: String; var
         }
     }
     private func clearQuickUnlock() throws {
+        if transient { settings.pinEnabled = false; settings.touchIDEnabled = false; pinWrappingKey = nil; return }
         try Keychain.delete("touch-id"); try store.delete("pin"); pinWrappingKey = nil
         settings.pinEnabled = false; settings.touchIDEnabled = false; try settings.save()
     }

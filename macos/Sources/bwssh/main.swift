@@ -2,7 +2,7 @@ import AppKit
 import BwCore
 
 if CommandLine.arguments.contains("--version") {
-    print("bwssh 1.0.0 (native macOS)")
+    print("bwssh \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1") (native macOS)")
 } else if CommandLine.arguments.contains("--ensure-agent") {
     if SocketServer.isRunning() { exit(0) }
     let bundle = Bundle.main.bundleURL
@@ -13,6 +13,23 @@ if CommandLine.arguments.contains("--version") {
     fputs("bwssh agent did not become ready within 10 seconds.\n", stderr); exit(1)
 } else {
     let app = NSApplication.shared
+    #if DEBUG
+    if CommandLine.arguments.contains("--ui-preview") || ProcessInfo.processInfo.environment["BWSSH_UI_PREVIEW"] == "1" {
+        _ = MainActor.assumeIsolated {
+            Task { @MainActor in
+                do {
+                    let (vault, agent, directory) = try await previewVault()
+                    let host = AppHost(vault: vault, agent: agent)
+                    app.delegate = host; host.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+                    // The application delegate is weak. Retain the preview host until process exit.
+                    previewHost = host; previewDirectory = directory
+                } catch { fputs("UI preview failed: \(error)\n", stderr); app.terminate(nil) }
+            }
+        }
+        app.run()
+        exit(0)
+    }
+    #endif
     if let id = Bundle.main.bundleIdentifier, NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0.processIdentifier != getpid() }) {
         NSRunningApplication.runningApplications(withBundleIdentifier: id).first(where: { $0.processIdentifier != getpid() })?.activate(options: [.activateIgnoringOtherApps]); exit(0)
     }
@@ -24,3 +41,8 @@ if CommandLine.arguments.contains("--version") {
         let alert = NSAlert(); alert.messageText = "bwssh"; alert.informativeText = error.localizedDescription; alert.alertStyle = .critical; alert.runModal(); exit(1)
     } }
 }
+
+#if DEBUG
+private var previewHost: AppHost?
+private var previewDirectory: URL?
+#endif

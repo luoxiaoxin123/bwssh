@@ -4,6 +4,16 @@
 支持 Apple Silicon (`arm64`) 和 Intel (`x86_64`)；运行时不需要 .NET、Electron、WebView 或 Bitwarden CLI。
 Windows 版本继续使用仓库根目录的解决方案；macOS 版本是独立原生实现。
 
+## 1.0.1 界面更新
+
+采用 AppKit 标准窗口工具栏和搜索控件，密钥与审计使用紧凑表格，固定详情区避免选中行时窗口跳动。
+设置改为独立窗口（`⌘,`），支持 `⌘N` 添加密钥、`⌘R` 同步、`⌘F` 搜索和 `⌘W` 关闭窗口。
+不支持 Touch ID 的设备直接显示不可用。界面使用系统语义颜色，已用合成数据检查浅色、深色及窄窗口布局。
+
+设计参考 Apple 的 [macOS 设计指南](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)、
+[工具栏](https://developer.apple.com/design/human-interface-guidelines/toolbars)和
+[侧边栏](https://developer.apple.com/design/human-interface-guidelines/sidebars)。这不是 Apple 的认证或逐条合规声明。
+
 ## 安装和使用
 
 1. 从分支的 **macOS native packages** Actions 运行中下载对应架构的 artifact。
@@ -80,8 +90,8 @@ git config --global commit.gpgsign true
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.0
-python3 macos/package.py --arch x86_64 --version 1.0.0
+python3 macos/package.py --arch arm64 --version 1.0.1
+python3 macos/package.py --arch x86_64 --version 1.0.1
 ```
 
 仅安装 Command Line Tools、没有 XCTest 的机器可运行同一套核心用例：
@@ -98,3 +108,9 @@ python3 macos/check-local.py
 构建、检查签名与架构，上传各自的 ZIP、DMG 和 SHA256SUMS，默认保留 30 天。
 
 第三方源码来源及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 界面开发预览
+
+`python3 macos/preview.py` 生成独立的 Debug 预览 app，使用虚构账号和临时密钥，不启动 agent socket、
+通知或定时同步，也不读取个人密码库。预览菜单可切换浅色、深色和窄窗口。预览入口仅编译到 Debug，
+不会出现在发布包中。
