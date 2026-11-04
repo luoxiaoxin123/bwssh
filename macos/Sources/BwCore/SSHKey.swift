@@ -214,12 +214,22 @@ public final class SSHKey {
             default: throw BwError("Unsupported explicit EC domain")
             }
         }
-        let pub: Data
+        let size: Int
         switch curve {
-        case Data([0x2a,0x86,0x48,0xce,0x3d,3,1,7]): pub = try P256.Signing.PrivateKey(rawRepresentation: scalar).publicKey.x963Representation
-        case Data([0x2b,0x81,4,0,0x22]): pub = try P384.Signing.PrivateKey(rawRepresentation: scalar).publicKey.x963Representation
-        case Data([0x2b,0x81,4,0,0x23]): pub = try P521.Signing.PrivateKey(rawRepresentation: scalar).publicKey.x963Representation
+        case Data([0x2a,0x86,0x48,0xce,0x3d,3,1,7]): size = 32
+        case Data([0x2b,0x81,4,0,0x22]): size = 48
+        case Data([0x2b,0x81,4,0,0x23]): size = 66
         default: throw BwError("Unsupported EC curve")
+        }
+        // Some SEC1 exporters omit leading zero bytes. CryptoKit and Security.framework
+        // require a fixed-width scalar, even when its unsigned value needs fewer bytes.
+        guard !scalar.isEmpty, scalar.count <= size else { throw BwError("Invalid EC private key size") }
+        scalar = Data(repeating: 0, count: size - scalar.count) + scalar
+        let pub: Data
+        switch size {
+        case 32: pub = try P256.Signing.PrivateKey(rawRepresentation: scalar).publicKey.x963Representation
+        case 48: pub = try P384.Signing.PrivateKey(rawRepresentation: scalar).publicKey.x963Representation
+        default: pub = try P521.Signing.PrivateKey(rawRepresentation: scalar).publicKey.x963Representation
         }
         var raw = pub + scalar; defer { raw.wipe() }
         return try fromSec(createSec(raw, type: kSecAttrKeyTypeECSECPrimeRandom))
