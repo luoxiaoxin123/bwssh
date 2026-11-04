@@ -13,7 +13,7 @@ if CommandLine.arguments.contains("--smoke-agent"), let path = smokeSocket {
 #endif
 
 if CommandLine.arguments.contains("--version") {
-    print("bwssh \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.2") (native macOS)")
+    print("bwssh \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3") (native macOS)")
 } else if CommandLine.arguments.contains("--ensure-agent") {
     var path = Paths.socket
     var launchArguments = ["--background"]

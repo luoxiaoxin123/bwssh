@@ -558,12 +558,16 @@ struct SettingsView: View {
 
 }
 
+@MainActor final class ApprovalNotice: ObservableObject { @Published var text = "" }
+
 struct ApprovalsView: View {
     @ObservedObject var vault: Vault
     @ObservedObject var agent: Agent
+    @ObservedObject var notice: ApprovalNotice
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                if !notice.text.isEmpty { Text(notice.text).font(.caption).foregroundStyle(.secondary) }
                 ForEach(agent.pending) { request in
                     VStack(alignment: .leading, spacing: 14) {
                         Label(request.context?.operation ?? tr("解锁密码库", "Unlock vault"), systemImage: "key.fill").font(.title2.bold())
@@ -581,7 +585,7 @@ struct ApprovalsView: View {
                             Button(tr("拒绝", "Deny"), role: .destructive) { agent.resolve(request.id, choice: .deny) }
                             Spacer()
                             if vault.unlocked {
-                                if request.identity != nil, request.context?.forwarded != true {
+                                if request.allowsTemporaryGrant {
                                     Button("\(vault.settings.grantMinutes) " + tr("分钟内放行", "min allow")) { agent.resolve(request.id, choice: .grant) }
                                 }
                                 Button(tr("批准", "Approve")) { agent.resolve(request.id, choice: .approve) }.buttonStyle(.borderedProminent)
@@ -591,6 +595,6 @@ struct ApprovalsView: View {
                 }
                 if agent.pending.isEmpty { Text(tr("没有待审批的请求", "No pending requests")).foregroundStyle(.secondary) }
             }.padding(18)
-        }.frame(minWidth: 440, minHeight: 240)
+        }.frame(width: 440, height: vault.unlocked ? 300 : 390)
     }
 }

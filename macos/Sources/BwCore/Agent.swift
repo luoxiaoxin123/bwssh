@@ -109,6 +109,18 @@ public struct PendingApproval: Identifiable {
     public let destination: String?
     public let created = Date()
     public var process: String { chain.reversed().map(\.name).joined(separator: " → ") }
+    public var allowsTemporaryGrant: Bool { identity != nil && target != nil && context?.forwarded != true }
+    public func notificationCategory(unlocked: Bool) -> String {
+        unlocked ? (allowsTemporaryGrant ? "approval" : "approval-no-grant") : "locked"
+    }
+    public func notificationChoice(action: String, unlocked: Bool) -> ApprovalChoice? {
+        switch action {
+        case "deny": return .deny
+        case "approve" where unlocked: return .approve
+        case "grant" where unlocked && allowsTemporaryGrant: return .grant
+        default: return nil
+        }
+    }
 }
 
 public struct ProcessGrant: Identifiable {
@@ -117,7 +129,7 @@ public struct ProcessGrant: Identifiable {
     public let expires: Date
 }
 
-public enum ApprovalChoice { case approve, grant, deny }
+public enum ApprovalChoice: Equatable { case approve, grant, deny }
 
 @MainActor public final class Agent: ObservableObject {
     @Published public private(set) var pending: [PendingApproval] = []

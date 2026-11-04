@@ -12,6 +12,8 @@ import BwCore
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
     private var approvalPanel: NSPanel?
+    private var notificationAuthorization: Task<Bool, Never>?
+    private var approvalNotice = ApprovalNotice()
     private var settingsWindow: NSWindow?
     private var mainToolbar: NSToolbar?
     private var toolbarPage = "keys"
@@ -76,11 +78,11 @@ import BwCore
         vault.$unlocked.combineLatest(vault.$identities).sink { [weak self] _, _ in
             DispatchQueue.main.async { self?.rebuildMenu() }
         }.store(in: &observations)
-        agent.onPrompt = { [weak self] request in self?.showApproval(); self?.notify(request) }
+        agent.onPrompt = { [weak self] request in self?.rebuildMenu(); self?.notify(request) }
         agent.onDismiss = { [weak self] id in
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id.uuidString])
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id.uuidString])
-            if self?.agent.pending.isEmpty == true { self?.approvalPanel?.orderOut(nil) }
+            if self?.agent.pending.isEmpty == true { self?.approvalPanel?.orderOut(nil) }; self?.rebuildMenu()
         }
         configureNotifications()
         do { let server = SocketServer(agent: agent); try server.start(); self.server = server; agent.status = tr("Agent 正在监听", "Agent listening") }
@@ -102,37 +104,76 @@ import BwCore
     private func configureNotifications() {
         guard Bundle.main.bundleIdentifier == "com.bwssh.macos" else { return }
         let center = UNUserNotificationCenter.current(); center.delegate = self
+        registerNotificationCategories()
+        notificationAuthorization = Task {
+            (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        }
+    }
+    private func registerNotificationCategories() {
         let approve = UNNotificationAction(identifier: "approve", title: tr("批准", "Approve"), options: [.authenticationRequired])
-        let grant = UNNotificationAction(identifier: "grant", title: tr("限时放行", "Allow temporarily"), options: [.authenticationRequired])
+        let grant = UNNotificationAction(identifier: "grant", title: "\(vault.settings.grantMinutes) " + tr("分钟内放行", "min allow"), options: [.authenticationRequired])
         let unlock = UNNotificationAction(identifier: "unlock", title: tr("解锁并批准", "Unlock and approve"), options: [.foreground, .authenticationRequired])
         let deny = UNNotificationAction(identifier: "deny", title: tr("拒绝", "Deny"), options: [.destructive])
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: "approval", actions: [approve, grant, deny], intentIdentifiers: []),
-            UNNotificationCategory(identifier: "locked", actions: [unlock, deny], intentIdentifiers: [])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: "approval", actions: [approve, grant, deny], intentIdentifiers: [], options: [.customDismissAction]),
+            UNNotificationCategory(identifier: "approval-no-grant", actions: [approve, deny], intentIdentifiers: [], options: [.customDismissAction]),
+            UNNotificationCategory(identifier: "locked", actions: [unlock, deny], intentIdentifiers: [], options: [.customDismissAction])
         ])
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
     private func notify(_ request: PendingApproval) {
-        guard Bundle.main.bundleIdentifier == "com.bwssh.macos" else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "bwssh · " + (request.context?.operation ?? tr("解锁密码库", "Unlock vault"))
-        content.body = [request.identity?.name, request.process, request.destination, request.context?.host].compactMap { $0 }.joined(separator: "\n")
-        content.categoryIdentifier = vault.unlocked ? "approval" : "locked"
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: request.id.uuidString, content: content, trigger: nil))
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard await notificationAuthorization?.value == true else {
+                guard agent.pending.contains(where: { $0.id == request.id }) else { return }
+                showApproval(notice: tr("系统通知未启用，请在系统设置 → 通知 → bwssh 中允许通知。", "Enable bwssh notifications in System Settings → Notifications.")); return
+            }
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            guard agent.pending.contains(where: { $0.id == request.id }) else { return }
+            guard settings.authorizationStatus == .authorized, settings.alertSetting == .enabled else {
+                showApproval(notice: tr("系统通知未启用，请在系统设置 → 通知 → bwssh 中允许通知。", "Enable bwssh notifications in System Settings → Notifications.")); return
+            }
+            registerNotificationCategories()
+            let content = UNMutableNotificationContent()
+            content.title = "bwssh · " + (request.context?.operation ?? tr("解锁密码库", "Unlock vault"))
+            content.subtitle = request.identity?.name ?? tr("SSH 密钥", "SSH keys")
+            var lines = [request.process, request.destination].compactMap { $0 }.filter { !$0.isEmpty }
+            if !vault.unlocked { lines.append(tr("解锁密码库后批准此次请求", "Unlock the vault to approve this request")) }
+            if request.context?.forwarded == true { lines.append(tr("转发请求，不提供临时放行", "Forwarded request; temporary grants unavailable")) }
+            if let host = request.context?.host { lines.append(tr("已验证主机：", "Verified host: ") + host) }
+            content.body = lines.joined(separator: "\n")
+            content.categoryIdentifier = request.notificationCategory(unlocked: vault.unlocked)
+            content.sound = .default
+            do {
+                try await center.add(UNNotificationRequest(identifier: request.id.uuidString, content: content, trigger: nil))
+                // A timeout/cancellation can occur while the system accepts the notification.
+                if !agent.pending.contains(where: { $0.id == request.id }) {
+                    center.removeDeliveredNotifications(withIdentifiers: [request.id.uuidString])
+                    center.removePendingNotificationRequests(withIdentifiers: [request.id.uuidString])
+                }
+            } catch {
+                if agent.pending.contains(where: { $0.id == request.id }) {
+                    showApproval(notice: tr("无法发送系统通知，暂用此窗口审批。", "Could not deliver a notification; approve in this window."))
+                }
+            }
+        }
     }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([.banner, .sound]) }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([.banner, .list, .sound]) }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         Task { @MainActor in
             defer { completionHandler() }
-            guard let id = UUID(uuidString: response.notification.request.identifier), agent.pending.contains(where: { $0.id == id }) else { return }
-            switch response.actionIdentifier {
-            case "deny": agent.resolve(id, choice: .deny)
-            case "approve" where vault.unlocked: agent.resolve(id, choice: .approve)
-            case "grant" where vault.unlocked: agent.resolve(id, choice: .grant)
-            case "unlock" where vault.settings.touchIDEnabled:
+            guard let id = UUID(uuidString: response.notification.request.identifier), let request = agent.pending.first(where: { $0.id == id }) else { return }
+            let action = response.actionIdentifier == UNNotificationDismissActionIdentifier ? "deny" : response.actionIdentifier
+            if let choice = request.notificationChoice(action: action, unlocked: vault.unlocked) {
+                agent.resolve(id, choice: choice); return
+            }
+            switch action {
+            case "unlock" where vault.settings.touchIDEnabled && !vault.unlocked:
                 do { try await vault.unlockTouchID(); agent.resolve(id, choice: .approve) }
                 catch { vault.message = error.localizedDescription; showApproval() }
-            default: showApproval(); NSApp.activate(ignoringOtherApps: true)
+            case "unlock", "approve", "grant", UNNotificationDefaultActionIdentifier:
+                showApproval(); NSApp.activate(ignoringOtherApps: true)
+            default: break
             }
         }
     }
@@ -155,6 +196,10 @@ import BwCore
         statusItem?.button?.image = NSImage(systemSymbolName: icon, accessibilityDescription: "bwssh")
         let menu = NSMenu(); let state = vault.unlocked ? tr("已解锁", "Unlocked") : tr("已锁定", "Locked")
         menu.addItem(withTitle: "bwssh · \(state) · \(vault.identities.count)", action: nil, keyEquivalent: "")
+        if !agent.pending.isEmpty {
+            let pending = menu.addItem(withTitle: tr("待审批请求", "Pending requests") + " (\(agent.pending.count))…", action: #selector(openPendingApprovals), keyEquivalent: "")
+            pending.target = self
+        }
         menu.addItem(.separator())
         let items: [(String, Selector)] = [(tr("打开 bwssh…", "Open bwssh…"), #selector(showWindow)), (tr("锁定密码库", "Lock vault"), #selector(lockVault)),
             (tr("同步", "Sync"), #selector(syncVault)), (tr("撤销所有临时授权", "Revoke all grants"), #selector(revoke)), (tr("设置…", "Settings…"), #selector(showSettings)), (tr("退出", "Quit"), #selector(quit))]
@@ -270,14 +315,18 @@ import BwCore
         }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-    private func showApproval() {
+    @objc private func openPendingApprovals() { showApproval() }
+    private func showApproval(notice: String = "") {
+        guard !agent.pending.isEmpty else { return }
+        approvalNotice.text = notice
         if approvalPanel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 520), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
             panel.title = tr("bwssh · 密钥使用审批", "bwssh · Key approval"); panel.isReleasedWhenClosed = false
             panel.level = .floating; panel.hidesOnDeactivate = false; panel.delegate = self
-            panel.contentView = NSHostingView(rootView: ApprovalsView(vault: vault, agent: agent)); panel.center(); approvalPanel = panel
+            panel.contentView = NSHostingView(rootView: ApprovalsView(vault: vault, agent: agent, notice: approvalNotice)); panel.center(); approvalPanel = panel
         }
-        approvalPanel?.orderFrontRegardless()
+        approvalPanel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil); if sender === approvalPanel { agent.cancelAll() }; return false
@@ -290,7 +339,7 @@ import BwCore
     #endif
     @objc private func syncVault() { vault.perform { try await self.vault.sync() } }
     @objc private func revoke() { agent.revokeAll() }
-    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.2", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
+    @objc private func about() { NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "bwssh", .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3", .credits: NSAttributedString(string: tr("原生 macOS Bitwarden SSH agent", "Native macOS Bitwarden SSH agent"))]) }
     @objc private func quit() { vault.lock(); server?.stop(); NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) { vault.lock(); server?.stop(); timer?.invalidate() }
 }

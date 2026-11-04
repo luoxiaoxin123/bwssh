@@ -6,6 +6,26 @@ import CryptoKit
 @testable import BwCore
 
 final class CoreTests: XCTestCase {
+    func testNotificationActionsRespectLockAndForwarding() throws {
+        let identity = PublicIdentity(id: "fixture", name: "Fixture", blob: Data([1]), type: "ssh-ed25519")
+        let process = ProcessNode(pid: getpid(), started: 1, path: "/usr/bin/ssh")
+        let context = SignContext(keyBlob: identity.blob, data: Data(), flags: 0, host: nil, forwarded: false)
+        let request = PendingApproval(id: UUID(), identity: identity, context: context, chain: [process], target: process, destination: "fixture@example.com")
+        XCTAssertEqual(request.notificationCategory(unlocked: true), "approval")
+        XCTAssertEqual(request.notificationCategory(unlocked: false), "locked")
+        XCTAssertEqual(request.notificationChoice(action: "approve", unlocked: true), .approve)
+        XCTAssertEqual(request.notificationChoice(action: "grant", unlocked: true), .grant)
+        XCTAssertEqual(request.notificationChoice(action: "deny", unlocked: false), .deny)
+        XCTAssertTrue(request.notificationChoice(action: "approve", unlocked: false) == nil)
+        XCTAssertTrue(request.notificationChoice(action: "grant", unlocked: false) == nil)
+        XCTAssertTrue(request.notificationChoice(action: "unknown", unlocked: true) == nil)
+        let forwarded = PendingApproval(id: UUID(), identity: identity, context: SignContext(keyBlob: identity.blob, data: Data(), flags: 0, host: nil, forwarded: true), chain: [process], target: process, destination: nil)
+        XCTAssertEqual(forwarded.notificationCategory(unlocked: true), "approval-no-grant")
+        XCTAssertTrue(forwarded.notificationChoice(action: "grant", unlocked: true) == nil)
+        let list = PendingApproval(id: UUID(), identity: nil, context: nil, chain: [], target: nil, destination: nil)
+        XCTAssertEqual(list.notificationCategory(unlocked: true), "approval-no-grant")
+        XCTAssertTrue(list.notificationChoice(action: "grant", unlocked: true) == nil)
+    }
     @MainActor func testLockedStartupUsesCanonicalUnlockTupleAndKeepsMainHidden() async throws {
         let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
         let store = try LocalStore(root: directory, encryptionKey: Crypto.random(32))
@@ -285,8 +305,10 @@ final class CoreTests: XCTestCase {
         agent.onPrompt = { _ in }
         let pending = Task { await agent.sign(context, chain: chain) }
         for _ in 0..<100 { if !agent.pending.isEmpty { break }; await Task.yield() }
-        XCTAssertEqual(agent.pending.count, 1); pending.cancel(); let cancelled = await pending.value
+        XCTAssertEqual(agent.pending.count, 1); let expiredID = agent.pending.first!.id; pending.cancel(); let cancelled = await pending.value
         XCTAssertTrue(cancelled == nil); XCTAssertTrue(agent.pending.isEmpty)
+        agent.resolve(expiredID, choice: .grant) // A late notification response cannot resurrect a cancelled request.
+        XCTAssertTrue(agent.pending.isEmpty); XCTAssertTrue(agent.grants.isEmpty)
         vault.settings.promptMode = "never"; let automatic = await agent.sign(context, chain: chain); XCTAssertTrue(automatic != nil)
         vault.lock(); vault.settings.promptMode = "always"
         agent.onPrompt = { request in agent.resolve(request.id, choice: .approve) }

@@ -4,6 +4,14 @@
 支持 Apple Silicon (`arm64`) 和 Intel (`x86_64`)；运行时不需要 .NET、Electron、WebView 或 Bitwarden CLI。
 Windows 版本继续使用仓库根目录的解决方案；macOS 版本是独立原生实现。
 
+## 1.0.3 通知审批
+
+- 默认仅发送 macOS 系统通知，不再同时弹出审批窗口；前台运行时也显示通知。
+- 通知提供批准、按设置时长临时放行、拒绝；转发请求不提供临时放行。系统可能将操作收进通知的选项菜单。
+- 主动关闭通知按拒绝处理；超时、取消或锁定后撤回通知，过期操作不再生效。
+- 点击通知或菜单栏的「待审批请求」可查看详情；密码库锁定时可通过 Touch ID 或紧凑窗口解锁。
+- 首次启动请允许通知；通知权限被关闭或发送失败时，才回退到紧凑审批窗口并提示开启通知。
+
 ## 1.0.2 修复
 
 - 首次启动显示登录页；已有账号但密码库锁定时显示独立解锁页，验证成功后才进入主界面。
@@ -53,7 +61,7 @@ git config --global user.signingkey 'ssh-ed25519 AAAA...'
 git config --global commit.gpgsign true
 ```
 
-系统通知和原生审批窗口会显示密钥、程序链、操作，以及可用的目标信息。
+系统通知显示密钥、程序链、操作和可用目标；点击通知可在紧凑窗口查看完整指纹。
 命令行推断的主机与通过 `session-bind@openssh.com` 验证的主机指纹分别标明。
 不带有效主机绑定的认证请求不缓存「锁定前记住」决定；仍可逐次批准。
 
@@ -62,7 +70,7 @@ git config --global commit.gpgsign true
 | 功能 | macOS 实现 |
 | --- | --- |
 | SSH agent / Git SSH 签名 | Unix socket；Ed25519、RSA SHA-256/512、ECDSA P-256/384/521 |
-| 通知审批 | UserNotifications + 原生审批窗口；通知不可用时仍可在窗口审批 |
+| 通知审批 | 默认 UserNotifications；通知不可用时回退紧凑窗口 |
 | 每次询问 / 锁定前记住 / 从不询问 | 设置页；锁定、退出账号、同步、手动撤销会清除缓存 |
 | 按程序限时放行 | 按密钥、PID、进程启动时间及路径绑定；转发请求不匹配程序授权 |
 | 程序链 / 审计 | 内核提供连接方 PID 和祖先进程；本地加密存储最近 2000 条，可筛选、清空 |
@@ -100,8 +108,8 @@ git config --global commit.gpgsign true
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.2
-python3 macos/package.py --arch x86_64 --version 1.0.2
+python3 macos/package.py --arch arm64 --version 1.0.3
+python3 macos/package.py --arch x86_64 --version 1.0.3
 ```
 
 仅安装 Command Line Tools、没有 XCTest 的机器可运行同一套核心用例：
