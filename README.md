@@ -2,7 +2,9 @@
 
 [English](README.en.md)
 
-bwssh 是一个 Windows 原生（WinUI 3）的 SSH agent。它从 Bitwarden 密码库读取 SSH 密钥，给 `ssh`、`git` 以及 Claude Code 这类 AI Agent 使用。
+bwssh 是一个原生 SSH agent，提供 Windows（WinUI 3）和 macOS（Swift / SwiftUI / AppKit）实现。它从 Bitwarden 密码库读取 SSH 密钥，给 `ssh`、`git` 以及 Claude Code 这类 AI Agent 使用。
+
+**macOS 用户：** 安装、双架构打包和功能说明见 [macOS README](macos/README.md)。下文主要介绍 Windows 版。
 
 支持 **Bitwarden 官方账号**（bitwarden.com / bitwarden.eu），也支持**自建服务器**上的账号。
 

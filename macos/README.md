@@ -1,0 +1,100 @@
+# bwssh for macOS
+
+原生 Swift / SwiftUI / AppKit 菜单栏 SSH agent，最低 macOS 13。
+支持 Apple Silicon (`arm64`) 和 Intel (`x86_64`)；运行时不需要 .NET、Electron、WebView 或 Bitwarden CLI。
+Windows 版本继续使用仓库根目录的解决方案；macOS 版本是独立原生实现。
+
+## 安装和使用
+
+1. 从分支的 **macOS native packages** Actions 运行中下载对应架构的 artifact。
+   每份 artifact 包含 `.dmg`、`.zip` 和 `SHA256SUMS`。M 系列选 `arm64`，Intel 选 `x86_64`。
+2. 打开 DMG，将 `bwssh.app` 拖入 Applications，再打开应用。
+   当前包使用本机临时签名，没有 Developer ID 签名和 Apple 公证；首次打开可能需在系统设置
+   → 隐私与安全性中选择「仍要打开」。更新后钥匙串可能重新请求访问授权。
+3. 登录 bitwarden.com、bitwarden.eu 或 HTTPS 自托管服务器。
+   支持主密码、验证器 / 邮件 / YubiKey OTP、API Key，以及新设备邮件验证码。
+   API Key 登录仍需主密码在本机解密密码库。
+4. 在「诊断」中点击「配置 SSH」，将固定 socket 写入 `~/.ssh/config`。
+   修改前备份为 `~/.ssh/config.bwssh.bak`，不会覆盖已有备份。撤销仅删除 bwssh 管理的区块。
+5. 将诊断页显示的 export 加到 `~/.zshrc`（其他 shell 用对应配置），并在当前终端执行它：
+
+   ```sh
+   export SSH_AUTH_SOCK="$HOME/Library/Application Support/bwssh/agent.sock"
+   ssh-add -L
+   ```
+
+SSH / Git 登录使用 `IdentityAgent`；`ssh-add` 和 Git SSH 提交签名使用 `SSH_AUTH_SOCK`。
+例如配置 Git SSH 签名：
+
+```sh
+git config --global gpg.format ssh
+# 粘贴 bwssh 复制的公钥，不要填私钥。
+git config --global user.signingkey 'ssh-ed25519 AAAA...'
+git config --global commit.gpgsign true
+```
+
+系统通知和原生审批窗口会显示密钥、程序链、操作，以及可用的目标信息。
+命令行推断的主机与通过 `session-bind@openssh.com` 验证的主机指纹分别标明。
+不带有效主机绑定的认证请求不缓存「锁定前记住」决定；仍可逐次批准。
+
+## Windows 功能对应
+
+| 功能 | macOS 实现 |
+| --- | --- |
+| SSH agent / Git SSH 签名 | Unix socket；Ed25519、RSA SHA-256/512、ECDSA P-256/384/521 |
+| 通知审批 | UserNotifications + 原生审批窗口；通知不可用时仍可在窗口审批 |
+| 每次询问 / 锁定前记住 / 从不询问 | 设置页；锁定、退出账号、同步、手动撤销会清除缓存 |
+| 按程序限时放行 | 按密钥、PID、进程启动时间及路径绑定；转发请求不匹配程序授权 |
+| 程序链 / 审计 | 内核提供连接方 PID 和祖先进程；本地加密存储最近 2000 条，可筛选、清空 |
+| Windows Hello | Touch ID；钥匙串使用当前生物识别集合访问控制 |
+| PIN | Argon2id；连续失败 5 次清除；每次启动后先主密码 / Touch ID 解锁一次 |
+| 空闲 / 锁屏 / 睡眠自动锁定 | 原生系统事件与空闲计时；间隔在设置页调整 |
+| 定时同步 | URLSession 直连 Bitwarden；失败后退避重试 |
+| 生成、导入、复制公钥、改名、回收站 | 支持；生成 Ed25519 / RSA 3072，写入前在本机加密 |
+| OpenSSH / PEM / PKCS#8 导入 | 支持；OpenSSH bcrypt + AES-256-CTR/CBC；加密 PKCS#8 使用 PBES2/PBKDF2/AES-CBC |
+| 常驻托盘 / 开机启动 | 菜单栏 / macOS 登录项；关闭窗口后 agent 继续运行 |
+| 按需启动 | 诊断页设置 `Match exec`，启动原生 app 后等待 socket；移动 app 后重新设置 |
+| 中英文 | 跟随系统首选语言 |
+
+按需启动遵循 Windows 版同样的限制：`ssh-add` 和 `git commit -S` 不读取 SSH 配置，须先打开应用。
+更改 `SSH_AUTH_SOCK` 只影响当前终端及其子进程，已打开的其他终端或 IDE 需要更新环境后再使用。
+可以与系统 ssh-agent 共存，但一个客户端一次只会选择一个 `IdentityAgent` / `SSH_AUTH_SOCK`。
+
+## 数据和边界
+
+- 本机数据：`~/Library/Application Support/bwssh`（目录 0700，socket / 文件 0600）。
+- 同步快照保留 Bitwarden 密文，账户令牌、公钥缓存、PIN 包装和审计再用 AES-GCM 加密，
+  存储密钥保存在当前用户的钥匙串。文件名也参与认证，不能交换文件绕过校验。
+- 主密码不落盘；解锁后的私钥只在内存中。锁定释放 Security.framework 密钥，清零应用拥有的
+  私密缓冲区。Swift String、Data 和系统加密框架可能产生临时副本，不能承诺所有底层副本立即清零。
+- 不支持 SSO、Duo / WebAuthn 两步验证、COSE/type 7、PuTTY `.ppk`，也不启用 RSA SHA-1 签名。
+- 自托管服务器目前要求 HTTPS；Unix socket 路径受 macOS 的 103 字节长度限制，超长用户目录会报错。
+- CI 与本地自动测试使用合成密码库和临时密钥，不访问个人账户。
+  实际 Bitwarden / Vaultwarden 账户登录、Touch ID、系统通知权限、登录项和锁屏行为仍需在目标机器验收。
+- 原生实现去掉了跨平台运行时，但实际常驻内存取决于窗口、密钥数量、系统版本和 KDF 参数。
+  Argon2id 在解锁期间会按账户设定临时分配内存，不能将这段峰值当作常驻占用。
+
+## 构建与验证
+
+完整 Xcode 环境：
+
+```sh
+swift test --package-path macos
+python3 macos/package.py --arch arm64 --version 1.0.0
+python3 macos/package.py --arch x86_64 --version 1.0.0
+```
+
+仅安装 Command Line Tools、没有 XCTest 的机器可运行同一套核心用例：
+
+```sh
+python3 macos/check-local.py
+```
+
+测试覆盖 Bitwarden PBKDF2/HKDF 与 Argon2id 向量、密文篡改、密钥导入、主机绑定、审批模式、
+锁定清除授权、取消、加密存储和 SSH 配置备份逻辑。系统 `ssh-add` 列出密钥并测试签名；
+`ssh-keygen -Y sign/verify` 通过真实 socket 完成五种密钥的 Git 命名空间签名和独立验签。
+
+输出目录为 `artifacts/macos/<arch>/`。GitHub Actions 分别在原生 ARM 和 Intel runner 上测试、
+构建、检查签名与架构，上传各自的 ZIP、DMG 和 SHA256SUMS，默认保留 30 天。
+
+第三方源码来源及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

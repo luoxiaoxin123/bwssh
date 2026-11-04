@@ -1,5 +1,7 @@
 # bwssh
 
+**macOS:** A native Swift / SwiftUI / AppKit implementation is available in [`macos/`](macos/README.md), with separate Apple Silicon (`arm64`) and Intel (`x86_64`) packages built by GitHub Actions. The documentation below describes the Windows implementation.
+
 [中文](README.md)
 
 bwssh is a native Windows (WinUI 3) SSH agent. It reads SSH keys from your Bitwarden vault and serves them to `ssh`, `git`, and AI agents such as Claude Code.

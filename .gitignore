@@ -5,3 +5,6 @@ dist/
 *.user
 .vs/
 TestResults/
+.build/
+.swiftpm/
+.DS_Store

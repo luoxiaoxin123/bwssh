@@ -1,0 +1,65 @@
+name: macOS native packages
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "macos/**"
+      - ".github/workflows/macos.yml"
+      - "src/BwSshAgent.App/Assets/app.png"
+  pull_request:
+    paths: ["macos/**", ".github/workflows/macos.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version
+        default: "1.0.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native runner
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          swift --version
+          xcode-select -p
+      - name: Test cryptography and real OpenSSH interoperability
+        run: swift test --package-path macos
+      - name: Build native application, ZIP and DMG
+        env:
+          PACKAGE_VERSION: ${{ inputs.version || '1.0.0' }}
+          PACKAGE_ARCH: ${{ matrix.arch }}
+        run: python3 macos/package.py --arch "$PACKAGE_ARCH" --version "$PACKAGE_VERSION"
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: bwssh-macos-${{ matrix.arch }}
+          path: |
+            artifacts/macos/${{ matrix.arch }}/*.zip
+            artifacts/macos/${{ matrix.arch }}/*.dmg
+            artifacts/macos/${{ matrix.arch }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
