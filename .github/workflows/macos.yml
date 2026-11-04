@@ -18,6 +18,15 @@ on:
         default: "1.0.5"
         required: true
         type: string
+      architecture:
+        description: Architecture to build
+        default: all
+        type: choice
+        options: [all, arm64, x86_64]
+      release_tag:
+        description: Existing release tag to attach packages to (optional, overrides version)
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -32,12 +41,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+        arch: ${{ fromJSON(inputs.architecture == 'arm64' && '["arm64"]' || inputs.architecture == 'x86_64' && '["x86_64"]' || '["arm64","x86_64"]') }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-15' || 'macos-15-intel' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +51,7 @@ jobs:
       - name: Resolve package version
         id: version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           version="${RELEASE_TAG:-${INPUT_VERSION:-1.0.5}}"
@@ -79,10 +84,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Attach packages to release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
           PACKAGE_ARCH: ${{ matrix.arch }}
         run: |
           dir="artifacts/macos/$PACKAGE_ARCH"
