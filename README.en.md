@@ -117,7 +117,7 @@ Replace `ssh-ed25519 AAAA...` with your full public key. On macOS, also set `SSH
 
 bwssh starts with the vault locked after each restart. Unlock with the master password or a previously configured Windows Hello on Windows, or the master password or Touch ID on macOS.
 
-To enable Touch ID, first unlock with your master password, then open Settings → Quick unlock → Set up Touch ID. Macs without Touch ID can use the master password and PIN.
+To enable Touch ID, first unlock with your master password, then enable "Unlock with Touch ID" in Settings → Quick unlock. Macs without Touch ID can use the master password and PIN. Both versions have separate switches for PIN and biometric unlock; turning one off leaves the other enabled.
 
 By default, PIN requires one master password or Windows Hello / Touch ID unlock after each start. To use PIN immediately after restarting:
 
@@ -215,7 +215,7 @@ Requires Swift and Xcode. Test and package for your Mac's architecture:
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.5
+python3 macos/package.py --arch arm64 --version 1.0.6
 # On Intel Macs, replace arm64 with x86_64.
 ```
 

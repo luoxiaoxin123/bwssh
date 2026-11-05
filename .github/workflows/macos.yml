@@ -15,7 +15,7 @@ on:
     inputs:
       version:
         description: Package version
-        default: "1.0.5"
+        default: "1.0.6"
         required: true
         type: string
       architecture:
@@ -54,7 +54,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="${RELEASE_TAG:-${INPUT_VERSION:-1.0.5}}"
+          version="${RELEASE_TAG:-${INPUT_VERSION:-1.0.6}}"
           version="${version#[vV]}"
           echo "value=$version" >> "$GITHUB_OUTPUT"
       - name: Verify native runner

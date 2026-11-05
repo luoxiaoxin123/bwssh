@@ -245,7 +245,15 @@ public enum VaultScreen: Equatable { case login, unlock, main }
         try Keychain.delete("touch-id"); try store.delete("pin"); pinWrappingKey = nil
         settings.pinEnabled = false; settings.touchIDEnabled = false; try settings.save()
     }
-    public func disableQuickUnlock() throws { try clearQuickUnlock() }
+    public func disablePIN() throws {
+        try store.delete("pin"); pinWrappingKey = nil; settings.pinEnabled = false
+        if !transient { try settings.save() }
+    }
+    public func disableTouchID() throws {
+        if !transient { try Keychain.delete("touch-id") }
+        settings.touchIDEnabled = false
+        if !transient { try settings.save() }
+    }
     public func add(name: String, pem: String, passphrase: String, rsa: Bool?) async throws {
         guard let userKey, var account, unlocked else { throw BwError("Unlock first") }
         let generation = epoch

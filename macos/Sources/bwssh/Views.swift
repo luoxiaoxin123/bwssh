@@ -493,7 +493,7 @@ struct DiagnosticsView: View {
 
 struct SettingsView: View {
     @ObservedObject var vault: Vault
-    @State private var pin = ""
+    @State private var settingPIN = false
     @State private var loginItem = SMAppService.mainApp.status == .enabled
     @State private var logout = false
     private var supportsBiometry: Bool { LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) }
@@ -522,32 +522,36 @@ struct SettingsView: View {
                     duration(tr("自动同步间隔", "Sync interval"), value: $vault.settings.syncMinutes, range: 0...1440, step: 5)
                 } header: { Text(tr("锁定与同步", "Lock and sync")) }
                 Section {
-                    LabeledContent("Touch ID") {
-                        if supportsBiometry {
-                            if vault.settings.touchIDEnabled { Text(tr("已开启", "Enabled")).foregroundStyle(.secondary) }
-                            else { Button(tr("设置 Touch ID…", "Set up Touch ID…")) { do { try vault.enableTouchID() } catch { vault.message = error.localizedDescription } }.disabled(!vault.unlocked) }
-                        } else { Text(tr("此 Mac 不可用", "Unavailable on this Mac")).foregroundStyle(.secondary) }
-                    }
-                    LabeledContent("PIN") {
-                        HStack(spacing: 8) {
-                            RevealPasswordField(tr("至少 4 位", "At least 4 characters"), text: $pin).labelsHidden().accessibilityLabel(tr("新 PIN", "New PIN")).frame(width: 145).textFieldStyle(.roundedBorder)
-                            Button(vault.settings.pinEnabled ? tr("更改…", "Change…") : tr("设置…", "Set up…")) { vault.perform { try await vault.setPIN(pin); pin = "" } }
-                                .disabled(!vault.unlocked || pin.count < 4 || vault.busy)
-                        }
-                    }
-                    Toggle(tr("每次启动后先用主密码或 Touch ID 解锁", "Require master password or Touch ID after each launch"), isOn: $vault.settings.pinRequiresPrimaryUnlockAfterRestart)
+                    Text(vault.unlocked
+                        ? tr("Touch ID 和 PIN 只保存在这台电脑上，用来代替输入主密码。", "Touch ID and PIN stay on this computer and replace typing your master password.")
+                        : tr("开启 Touch ID 或 PIN 需要先解锁密码库。", "Unlock the vault to turn on Touch ID or PIN."))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Toggle(tr("使用 Touch ID 解锁", "Unlock with Touch ID"), isOn: Binding(
+                        get: { vault.settings.touchIDEnabled },
+                        set: { enabled in
+                            do { if enabled { try vault.enableTouchID() } else { try vault.disableTouchID() } }
+                            catch { vault.message = error.localizedDescription }
+                        }))
+                        .disabled(!vault.unlocked || vault.busy || (!supportsBiometry && !vault.settings.touchIDEnabled))
+                    if !supportsBiometry { Text(tr("此 Mac 不支持 Touch ID。", "Touch ID is unavailable on this Mac.")).font(.caption).foregroundStyle(.secondary) }
+                    Toggle(tr("使用 PIN 解锁", "Unlock with PIN"), isOn: Binding(
+                        get: { vault.settings.pinEnabled },
+                        set: { enabled in
+                            if enabled { settingPIN = true }
+                            else { do { try vault.disablePIN() } catch { vault.message = error.localizedDescription } }
+                        }))
                         .disabled(!vault.unlocked || vault.busy)
-                    if vault.settings.touchIDEnabled || vault.settings.pinEnabled {
-                        Button(tr("关闭快速解锁…", "Disable quick unlock…")) { do { try vault.disableQuickUnlock() } catch { vault.message = error.localizedDescription } }
+                    Toggle(tr("每次启动后先用主密码或 Touch ID 解锁", "Require master password or Touch ID after each launch"), isOn: Binding(
+                        get: { !vault.settings.pinEnabled || vault.settings.pinRequiresPrimaryUnlockAfterRestart },
+                        set: { vault.settings.pinRequiresPrimaryUnlockAfterRestart = $0 }))
+                        .disabled(!vault.unlocked || vault.busy || !vault.pinAvailable)
+                    if vault.settings.pinEnabled {
+                        Text(vault.settings.pinRequiresPrimaryUnlockAfterRestart
+                            ? tr("每次启动后需要先用主密码或 Touch ID 解锁一次，之后才能用 PIN。", "After each start, unlock once with your master password or Touch ID before the PIN works.")
+                            : tr("PIN 在重启后仍可使用。", "The PIN keeps working after a restart."))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                } header: { Text(tr("快速解锁", "Quick unlock")) } footer: {
-                    Text(tr(vault.settings.pinRequiresPrimaryUnlockAfterRestart
-                        ? "开启时，每次启动后先用主密码或 Touch ID 解锁，之后可用 PIN。连续输错 5 次会清除 PIN。"
-                        : "关闭时，重启 bwssh 后可直接使用 PIN 解锁。连续输错 5 次会清除 PIN。",
-                        vault.settings.pinRequiresPrimaryUnlockAfterRestart
-                        ? "When enabled, unlock once with the master password or Touch ID after each launch before using PIN. Five failed attempts clear the PIN."
-                        : "When disabled, PIN can unlock bwssh immediately after restarting. Five failed attempts clear the PIN.")).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                }
+                } header: { Text(tr("快速解锁", "Quick unlock")) }
                 Section {
                     Toggle(tr("登录 macOS 时打开 bwssh", "Open bwssh at login"), isOn: $loginItem).onChange(of: loginItem) { enabled in
                         #if DEBUG
@@ -568,6 +572,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: 680).frame(maxWidth: .infinity).background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: vault.settings) { _ in vault.saveSettings() }
+        .sheet(isPresented: $settingPIN) { PINSetupView(vault: vault) }
         .confirmationDialog(tr("退出账号并清除本机密码库？", "Sign out and remove the local vault?"), isPresented: $logout) {
             Button(tr("退出账号", "Sign out"), role: .destructive) { do { try vault.logout() } catch { vault.message = error.localizedDescription } }
         }
@@ -579,6 +584,51 @@ struct SettingsView: View {
 }
 
 @MainActor final class ApprovalNotice: ObservableObject { @Published var text = "" }
+
+private struct PINSetupView: View {
+    @ObservedObject var vault: Vault
+    @Environment(\.dismiss) private var dismiss
+    @State private var pin = ""
+    @State private var confirmation = ""
+    @State private var requirePrimary = true
+    @State private var saving = false
+    @State private var error = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(tr("设置 PIN", "Set PIN")).font(.headline)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("PIN（至少 4 位）", "PIN (at least 4 characters)"))
+                RevealPasswordField("PIN", text: $pin)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("再次输入 PIN", "Confirm PIN"))
+                RevealPasswordField(tr("再次输入 PIN", "Confirm PIN"), text: $confirmation)
+            }
+            Toggle(tr("重启程序后需要先用主密码或 Touch ID 解锁", "After restarting, require the master password or Touch ID first"), isOn: $requirePrimary)
+                .toggleStyle(.checkbox)
+            if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                Spacer()
+                Button(tr("取消", "Cancel")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving)
+                Button(tr("保存", "Save")) { save() }.keyboardShortcut(.defaultAction).disabled(saving || !vault.unlocked)
+            }
+        }.padding(24).frame(width: 420).disabled(saving).interactiveDismissDisabled(saving)
+    }
+    private func save() {
+        guard pin.count >= 4 else { error = tr("PIN 至少需要 4 位。", "The PIN needs at least 4 characters."); return }
+        guard pin == confirmation else { error = tr("两次输入的 PIN 不一致。", "The PINs do not match."); return }
+        saving = true; error = ""
+        Task { @MainActor in
+            defer { saving = false }
+            do {
+                try await vault.setPIN(pin)
+                vault.settings.pinRequiresPrimaryUnlockAfterRestart = requirePrimary
+                vault.saveSettings()
+                pin = ""; confirmation = ""; dismiss()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+}
 
 private struct ApprovalSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero

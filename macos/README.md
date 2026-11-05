@@ -11,7 +11,7 @@
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.5
+python3 macos/package.py --arch arm64 --version 1.0.6
 # Intel Mac 使用 --arch x86_64
 ```
 

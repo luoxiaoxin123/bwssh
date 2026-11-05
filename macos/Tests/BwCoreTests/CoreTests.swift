@@ -56,6 +56,15 @@ final class CoreTests: XCTestCase {
         let exhausted = try Vault(store: store, settings: settings, transient: true)
         do { try await exhausted.unlockPIN("123456"); XCTFail("Five failures across restarts must clear the PIN") } catch {}
         XCTAssertFalse(exhausted.unlocked); XCTAssertFalse(exhausted.settings.pinEnabled); XCTAssertFalse(exhausted.pinAvailable)
+        try await initial.setPIN("654321")
+        initial.settings.touchIDEnabled = true
+        try initial.disablePIN()
+        XCTAssertFalse(initial.settings.pinEnabled); XCTAssertTrue(initial.settings.touchIDEnabled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("pin.sealed").path))
+        try await initial.setPIN("654321")
+        try initial.disableTouchID()
+        XCTAssertFalse(initial.settings.touchIDEnabled); XCTAssertTrue(initial.settings.pinEnabled)
+        initial.lock(); try await initial.unlockPIN("654321"); XCTAssertTrue(initial.unlocked)
     }
     func testNotificationActionsRespectLockAndForwarding() throws {
         let identity = PublicIdentity(id: "fixture", name: "Fixture", blob: Data([1]), type: "ssh-ed25519")

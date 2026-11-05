@@ -117,7 +117,7 @@ git config --global commit.gpgsign true
 
 每次重新启动 bwssh，密码库都会先保持锁定。Windows 可以用主密码或已设置的 Windows Hello 解锁，macOS 可以用主密码或已设置的 Touch ID 解锁。
 
-macOS 用户先用主密码解锁一次，再到“设置 → 快速解锁”点击“设置 Touch ID…”。没有可用 Touch ID 的 Mac 也可以使用主密码和 PIN。
+macOS 用户先用主密码解锁一次，再到“设置 → 快速解锁”开启“使用 Touch ID 解锁”。没有可用 Touch ID 的 Mac 也可以使用主密码和 PIN。 两端都通过各自的开关启用或关闭 PIN 和生物识别解锁，关闭其中一种不会影响另一种。
 
 PIN 默认要求每次启动后先用主密码或 Windows Hello / Touch ID 解锁一次，之后才能使用。如果希望重启后直接用 PIN：
 
@@ -215,7 +215,7 @@ Windows 版在 GitHub 上发布新的 Release 时，[workflow](.github/workflows
 
 ```sh
 swift test --package-path macos
-python3 macos/package.py --arch arm64 --version 1.0.5
+python3 macos/package.py --arch arm64 --version 1.0.6
 # Intel Mac 将 arm64 换成 x86_64
 ```
 
