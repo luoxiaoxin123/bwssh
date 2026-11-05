@@ -8,6 +8,7 @@ import BwCore
 @MainActor final class AppHost: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation, NSSearchFieldDelegate {
     let vault: Vault
     let agent: Agent
+    let updates: UpdateStatus
     private var server: SocketServer?
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
@@ -24,8 +25,8 @@ import BwCore
     private var screenObserver: NSObjectProtocol?
     private var lastUnlock = Date()
     private var wasUnlocked = false
-    init(vault: Vault, agent: Agent) {
-        self.vault = vault; self.agent = agent
+    init(vault: Vault, agent: Agent, updates: UpdateStatus? = nil) {
+        self.vault = vault; self.agent = agent; self.updates = updates ?? UpdateStatus()
         toolbarPage = vault.screen == .login ? "login" : vault.screen == .unlock ? "unlock" : "keys"
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -71,11 +72,17 @@ import BwCore
                 let command = preview.addItem(withTitle: title, action: selector, keyEquivalent: ""); command.target = self
             }
             item.submenu = preview; menu.addItem(item)
-            if (ProcessInfo.processInfo.environment["BWSSH_UI_PREVIEW_STATE"] ?? "").hasPrefix("approval-") {
+            let state = ProcessInfo.processInfo.environment["BWSSH_UI_PREVIEW_STATE"] ?? ""
+            if state == "update" { updates.showPreview() }
+            if ProcessInfo.processInfo.environment["BWSSH_PREVIEW_SCREENSHOT"] != nil {
+                NSApp.appearance = NSAppearance(named: ProcessInfo.processInfo.environment["BWSSH_PREVIEW_APPEARANCE"] == "light" ? .aqua : .darkAqua)
+            }
+            if state.hasPrefix("approval-") {
                 agent.onPrompt = { [weak self] _ in self?.showApproval() }
                 agent.onDismiss = { [weak self] _ in self?.approvalPanel?.orderOut(nil) }
                 agent.queuePreviewApproval()
             } else { showWindow() }
+            capturePreviewIfRequested()
             return
         }
         #endif
@@ -90,6 +97,10 @@ import BwCore
             if self?.agent.pending.isEmpty == true { self?.approvalPanel?.orderOut(nil) }; self?.rebuildMenu()
         }
         configureNotifications()
+        Task { @MainActor [weak self] in
+            guard let self, let update = await updates.check() else { return }
+            await notifyUpdate(update)
+        }
         do { let server = SocketServer(agent: agent); try server.start(); self.server = server; agent.status = tr("Agent 正在监听", "Agent listening") }
         catch { agent.status = error.localizedDescription; showWindow() }
         let center = NSWorkspace.shared.notificationCenter
@@ -122,8 +133,20 @@ import BwCore
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: "approval", actions: [approve, grant, deny], intentIdentifiers: [], options: [.customDismissAction]),
             UNNotificationCategory(identifier: "approval-no-grant", actions: [approve, deny], intentIdentifiers: [], options: [.customDismissAction]),
-            UNNotificationCategory(identifier: "locked", actions: [unlock, deny], intentIdentifiers: [], options: [.customDismissAction])
+            UNNotificationCategory(identifier: "locked", actions: [unlock, deny], intentIdentifiers: [], options: [.customDismissAction]),
+            UNNotificationCategory(identifier: "app-update", actions: [UNNotificationAction(identifier: "open-release", title: tr("查看新版本", "View release"), options: [.foreground])], intentIdentifiers: [])
         ])
+    }
+    private func notifyUpdate(_ update: ReleaseUpdate) async {
+        _ = await notificationAuthorization?.value
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized, settings.alertSetting == .enabled else { return }
+        let content = UNMutableNotificationContent()
+        content.title = tr("bwssh 有新版本 v", "bwssh update available: v") + update.version
+        content.body = tr("点击前往 GitHub 查看更新内容和下载安装包。", "Click to view release notes and download the update on GitHub.")
+        content.categoryIdentifier = "app-update"; content.sound = .default
+        try? await center.add(UNNotificationRequest(identifier: "bwssh-update", content: content, trigger: nil))
     }
     private func notify(_ request: PendingApproval) {
         Task { @MainActor [weak self] in
@@ -164,6 +187,12 @@ import BwCore
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         Task { @MainActor in
             defer { completionHandler() }
+            if response.notification.request.identifier == "bwssh-update" {
+                if response.actionIdentifier != UNNotificationDismissActionIdentifier {
+                    NSWorkspace.shared.open(updates.available?.url ?? ReleaseUpdate.latestURL)
+                }
+                return
+            }
             guard let id = UUID(uuidString: response.notification.request.identifier), let request = agent.pending.first(where: { $0.id == id }) else { return }
             let action = response.actionIdentifier == UNNotificationDismissActionIdentifier ? "deny" : response.actionIdentifier
             if let choice = request.notificationChoice(action: action, unlocked: vault.unlocked) {
@@ -219,7 +248,7 @@ import BwCore
             toolbar.delegate = self; toolbar.displayMode = .iconOnly; toolbar.allowsUserCustomization = false
             window.toolbar = toolbar; mainToolbar = toolbar
             let canvas = NSView(); window.contentView = canvas
-            let content = NSHostingView(rootView: MainView(vault: vault, agent: agent))
+            let content = NSHostingView(rootView: MainView(vault: vault, agent: agent, updates: updates))
             content.sizingOptions = []; content.translatesAutoresizingMaskIntoConstraints = false; canvas.addSubview(content)
             let layout = window.contentLayoutGuide as! NSLayoutGuide
             NSLayoutConstraint.activate([
@@ -344,6 +373,18 @@ import BwCore
     }
     @objc private func lockVault() { vault.lock() }
     #if DEBUG
+    private func capturePreviewIfRequested() {
+        guard let path = ProcessInfo.processInfo.environment["BWSSH_PREVIEW_SCREENSHOT"] else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard let view = (window ?? approvalPanel)?.contentView?.superview else { NSApp.terminate(nil); return }
+            view.layoutSubtreeIfNeeded()
+            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { NSApp.terminate(nil); return }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            if let png = bitmap.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
+            NSApp.terminate(nil)
+        }
+    }
     @objc private func previewLight() { NSApp.appearance = NSAppearance(named: .aqua) }
     @objc private func previewDark() { NSApp.appearance = NSAppearance(named: .darkAqua) }
     @objc private func previewCompact() { window?.setContentSize(NSSize(width: 800, height: 520)) }

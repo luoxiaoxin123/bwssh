@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
+using BwSshAgent.Core.Updates;
 using BwSshAgent.Core;
 using BwSshAgent.Core.Approval;
 using BwSshAgent.Core.Audit;
@@ -42,6 +44,7 @@ public sealed class AppHost
     public AgentPipeServer Pipe { get; }
     public ToastPresenter Toasts { get; }
     public TrayIcon Tray { get; }
+    public ReleaseUpdate? AvailableUpdate { get; private set; }
 
     /// <summary>Raised on the UI thread whenever anything shown in the UI may have changed.</summary>
     public event Action? StateChanged;
@@ -90,6 +93,7 @@ public sealed class AppHost
             Log.Error("Start on demand refresh failed", ex);
         }
 
+        _ = CheckForUpdatesAsync();
         _minuteTimer = new Timer(_ => Dispatcher.TryEnqueue(OnTimer), null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(30));
         if (Session.State != VaultState.LoggedOut)
         {
@@ -104,6 +108,30 @@ public sealed class AppHost
         {
             ShowMainWindow();
         }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var version = typeof(AppHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+            var update = await ReleaseChecker.CheckAsync(version);
+            if (update == null) { return; }
+            Dispatcher.TryEnqueue(() =>
+            {
+                if (_exiting) { return; }
+                AvailableUpdate = update;
+                RaiseStateChanged();
+                Toasts.ShowUpdate(update);
+            });
+        }
+        catch (Exception ex) { Log.Error("Update check failed", ex); }
+    }
+
+    public void OpenUpdateRelease()
+    {
+        try { Process.Start(new ProcessStartInfo((AvailableUpdate?.Url ?? ReleaseUpdate.LatestUrl).AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception ex) { Log.Error("Opening release page failed", ex); }
     }
 
     public void OnRedirectedActivation() => Dispatcher.TryEnqueue(() => ShowMainWindow());

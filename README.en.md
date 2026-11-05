@@ -23,6 +23,7 @@ https://github.com/user-attachments/assets/364c4304-048a-4365-b49c-174211e559ef
 - **Auto-lock and sync**: lock when idle, when the screen locks, or on sleep, and sync the vault on a schedule.
 - **Key management**: generate keys (Ed25519 / RSA), import private keys (OpenSSH, PKCS#8, PEM, including passphrase-protected keys), rename them, or move them to the trash.
 - **Start at sign-in or on demand**: run in the Windows tray or macOS menu bar, or let `ssh` and `git push` open bwssh when needed (see [Start on demand](#start-on-demand-nothing-resident)).
+- **Update reminders**: checks the latest stable GitHub release at startup. A newer version triggers a system notification and a small link in the lower-left corner of the main window, both opening the release page.
 - **English and Chinese UI**: follows your system language.
 
 ## See it in action

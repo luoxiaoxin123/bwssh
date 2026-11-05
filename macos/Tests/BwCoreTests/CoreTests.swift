@@ -6,6 +6,46 @@ import CryptoKit
 @testable import BwCore
 
 final class CoreTests: XCTestCase {
+    func testReleaseVersionsAndUntrustedMetadata() throws {
+        let cases: [(String, String, Bool)] = [
+            ("0.3.0", "v0.3.1", true), ("0.9.0", "v0.10.0", true),
+            ("0.3.0", "0.3.0", false), ("1.0.0", "v0.9.9", false),
+            ("0.3.0-beta.1", "v0.3.0", true), ("0.3.0+build.1", "v0.3.0+build.2", false),
+            ("0.3.0", "v0.4.0-beta", false), ("0.3.0", "not-a-version", false),
+            ("invalid", "v0.4.0", false), ("0.3.0", "v0.4.0/evil", false),
+            ("0.3.0", "v0.4.0\n", false), ("0.3.0", "v9999999999999999.0.0", false)
+        ]
+        for (current, tag, expected) in cases {
+            let data = try JSONSerialization.data(withJSONObject: ["tag_name": tag, "draft": false, "prerelease": false, "html_url": "https://untrusted.example/"])
+            let update = ReleaseUpdate.fromJSON(data, currentVersion: current)
+            XCTAssertEqual(update != nil, expected)
+            if let update { XCTAssertEqual(update.url.host, "github.com"); XCTAssertTrue(update.url.path.hasPrefix("/luoxiaoxin123/bwssh/releases/tag/")) }
+        }
+        for flag in ["draft", "prerelease"] {
+            var root: [String: Any] = ["tag_name": "v0.4.0", "draft": false, "prerelease": false]
+            root[flag] = true
+            XCTAssertTrue(ReleaseUpdate.fromJSON(try JSONSerialization.data(withJSONObject: root), currentVersion: "0.3.0") == nil)
+        }
+        XCTAssertTrue(ReleaseUpdate.fromJSON(Data("{broken".utf8), currentVersion: "0.3.0") == nil)
+        let valid = Data(#"{"tag_name":"v0.3.1","draft":false,"prerelease":false}"#.utf8)
+        XCTAssertEqual(ReleaseUpdate.fromJSON(valid, currentVersion: "0.3.0")?.url.absoluteString, "https://github.com/luoxiaoxin123/bwssh/releases/tag/v0.3.1")
+    }
+    func testReleaseCheckHandlesGitHubFailure() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [StubURLProtocol.self]
+        let checker = ReleaseChecker(session: URLSession(configuration: config))
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "api.github.com")
+            XCTAssertEqual(request.url?.path, "/repos/luoxiaoxin123/bwssh/releases/latest")
+            return (200, ["tag_name": "v0.3.1", "draft": false, "prerelease": false])
+        }
+        defer { StubURLProtocol.handler = nil }
+        let update = await checker.check(currentVersion: "0.3.0")
+        XCTAssertEqual(update?.version, "0.3.1")
+        StubURLProtocol.handler = { _ in (403, ["message": "rate limit"]) }
+        let limited = await checker.check(currentVersion: "0.3.0"); XCTAssertTrue(limited == nil)
+        StubURLProtocol.handler = { _ in (200, ["unexpected": "payload"]) }
+        let malformed = await checker.check(currentVersion: "0.3.0"); XCTAssertTrue(malformed == nil)
+    }
     func testPINRestartSettingPreservesExistingPreferences() throws {
         var settings = Settings(); settings.grantMinutes = 42; settings.approvalTimeout = 120; settings.pinEnabled = true
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]

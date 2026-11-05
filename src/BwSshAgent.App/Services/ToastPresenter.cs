@@ -2,6 +2,7 @@ using BwSshAgent.Core;
 using BwSshAgent.Core.Approval;
 using BwSshAgent.Core.Security;
 using BwSshAgent.Core.Settings;
+using BwSshAgent.Core.Updates;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
 
@@ -38,6 +39,23 @@ public sealed class ToastPresenter : IApprovalPresenter
         {
             Log.Error("Toast registration failed", ex);
         }
+    }
+
+    public void ShowUpdate(ReleaseUpdate update)
+    {
+        try
+        {
+            if (!_registered || AppNotificationManager.Default.Setting != AppNotificationSetting.Enabled) { return; }
+            var notification = new AppNotificationBuilder()
+                .AddArgument("action", "update")
+                .AddText(L.T($"bwssh 有新版本 v{update.Version}", $"bwssh update available: v{update.Version}"))
+                .AddText(L.T("点击前往 GitHub 查看更新内容和下载安装包。", "Click to view release notes and download the update on GitHub."))
+                .AddButton(new AppNotificationButton(L.T("查看新版本", "View release")).AddArgument("action", "update"))
+                .SetTag("update").SetGroup("updates").BuildNotification();
+            notification.Expiration = DateTimeOffset.Now.AddDays(1);
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch (Exception ex) { Log.Error("Showing update notification failed", ex); }
     }
 
     public void Unregister()
@@ -238,6 +256,9 @@ public sealed class ToastPresenter : IApprovalPresenter
         id ??= "";
         switch (action)
         {
+            case "update":
+                _host.Dispatcher.TryEnqueue(() => _host.OpenUpdateRelease());
+                break;
             case "approve":
                 _host.Agent.Respond(id, UserChoice.Approve);
                 break;

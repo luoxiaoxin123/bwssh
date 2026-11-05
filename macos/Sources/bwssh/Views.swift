@@ -30,6 +30,7 @@ struct InlineMessage: View {
 struct MainView: View {
     @ObservedObject var vault: Vault
     @ObservedObject var agent: Agent
+    @ObservedObject var updates: UpdateStatus
     @State private var selection: String? = "keys"
     @State private var visibility = NavigationSplitViewVisibility.all
     private var title: String {
@@ -76,8 +77,18 @@ struct MainView: View {
                                 Spacer(minLength: 0)
                                 Button { NotificationCenter.default.post(name: .bwsshOpenSettings, object: nil) } label: { Image(systemName: "gearshape") }
                                     .buttonStyle(.plain).help(tr("设置…", "Settings…")).accessibilityLabel(tr("设置", "Settings"))
-                            }.padding(.bottom, 12)
-                        }.padding(.horizontal, 14)
+                            }
+                            if let update = updates.available {
+                                Link(destination: update.url) {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                        Text(tr("有新版本 v", "Update available: v") + update.version).lineLimit(1)
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .semibold))
+                                    }.font(.caption).foregroundStyle(.tint)
+                                }.buttonStyle(.plain).help(tr("前往 GitHub 查看更新与下载", "View release and downloads on GitHub"))
+                            }
+                        }.padding(.horizontal, 14).padding(.bottom, 12)
                     }
                     .navigationTitle("bwssh")
                     .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 270)

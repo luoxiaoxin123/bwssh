@@ -22,6 +22,14 @@
         <NavigationView.FooterMenuItems>
             <NavigationViewItem Content="{l:T Zh='设置', En='Settings'}" Tag="settings" Icon="Setting" />
         </NavigationView.FooterMenuItems>
+        <NavigationView.PaneFooter>
+            <HyperlinkButton x:Name="UpdateLink" Visibility="Collapsed" Click="OnUpdateClicked" HorizontalAlignment="Stretch" Margin="8,0,8,12" Padding="8,6">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                    <FontIcon Glyph="&#xE895;" FontSize="13" />
+                    <TextBlock x:Name="UpdateText" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="145" />
+                </StackPanel>
+            </HyperlinkButton>
+        </NavigationView.PaneFooter>
         <Frame x:Name="ContentFrame" />
     </NavigationView>
 </Page>

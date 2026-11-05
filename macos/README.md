@@ -44,10 +44,16 @@ Touch ID、通知权限、登录项和锁屏行为仍需在实际设备上检查
 
 ```sh
 python3 macos/preview.py --state locked
-# 也支持 --state login、unlocked、approval-pin、approval-password
+# 也支持 --state login、unlocked、approval-pin、approval-password、update
 ```
 
-审批预览中的虚构 PIN 为 `123456`。
+审批预览中的虚构 PIN 为 `123456`。`update` 预览使用虚构的 `0.3.1` 新版本提示。
+
+可直接保存原生窗口截图：
+
+```sh
+python3 macos/preview.py --state update --appearance dark --screenshot /tmp/bwssh-update.png
+```
 
 生成独立的 Debug 预览应用，使用虚构账号和临时密钥，不读取个人密码库，不启动 agent、通知或定时同步。预览菜单可切换浅色、深色和窄窗口。预览入口不会出现在发布包中。
 
